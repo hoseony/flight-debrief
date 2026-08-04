@@ -54,8 +54,8 @@ int main() {
    
     /* Set up serial port (modify the config locally) */
 
-    // 9600 bps, 8 data pits, ignore modem-control signals, enable receiver
-    options.c_cflag = B9600 | CS8 | CLOCAL | CREAD;
+    // 115200 bps, 8 data pits, ignore modem-control signals, enable receiver
+    options.c_cflag = B115200 | CS8 | CLOCAL | CREAD;
     options.c_iflag = IGNPAR; /* ignore parity error */
     options.c_oflag = 0;
     options.c_lflag = 0;
@@ -94,14 +94,13 @@ int main() {
     }
 
     char received[255];
-    ssize_t received_len = read(fd, received, sizeof(received) - 1);
 
     size_t expected = text_len;
     size_t total_received = 0;
 
     while (total_received < expected) {
         // read consumes
-        ssize_t received_len = read(fd, received + total_received, expected - received_len); 
+        ssize_t received_len = read(fd, &received[total_received], expected - total_received); 
 
         if (received_len < 0) {
             perror("read");
@@ -118,10 +117,10 @@ int main() {
         total_received += (size_t)received_len;
     }
 
-    received[received_len] = '\0';
-    printf("Received text: %.*s\n", (int)received_len, received);
+    received[total_received] = '\0';
+    printf("Received text: %.*s\n", (int)total_received, received);
    
-    if ((size_t)received_len == text_len && memcmp(received, text, text_len) == 0) {
+    if ((size_t)total_received == text_len && memcmp(received, text, text_len) == 0) {
         // note that memcmp returns 0 if no difference!
         printf("PASS: uart loopback succeeded\n");
     } else {

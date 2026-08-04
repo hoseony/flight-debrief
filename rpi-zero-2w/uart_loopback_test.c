@@ -1,16 +1,15 @@
 /* Since this is the first time writing anything for Linux machines
  * This will contain too many comments than it needs to have. 
  *
+ * <Some Notes>
  * pins connected: pin8 - pin10
- *
  * ssuze_t: signed integer, count of bytes or negative error status
  *
  * <References>
  * - https://github.com/Johannes4Linux/Linux_Embedded_Interfaces
+ * - https://en.wikibooks.org/wiki/Serial_Programming/termios
  *
- *
- *
- * */
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -27,7 +26,6 @@
  *      tcflag_t c_cflag    control modes
  *      tcflag_t c_lflag    local   modes
  *      cc_t     c_cc[NCCS] control chars
- * 
  */
 
 int main() {
@@ -62,8 +60,9 @@ int main() {
     options.c_oflag = 0;
     options.c_lflag = 0;
 
-    options.c_cc[VMIN] = 1;   // minimum number of bytes read() wants
-    options.c_cc[VTIME] = 10; // timeout (in tenths of a second)
+    /* these options determine the behavior of read() */
+    options.c_cc[VMIN] = 0;   // minimum number of bytes read() wants
+    options.c_cc[VTIME] = 20; // timeout (in tenths of a second)
 
 
     tcflush(fd, TCIFLUSH); /* flush input buffer */
@@ -97,16 +96,26 @@ int main() {
     char received[255];
     ssize_t received_len = read(fd, received, sizeof(received) - 1);
 
-    if (received_len < 0) {
-        perror("read");
-        close(fd);
-        return 1;
-    }
+    size_t expected = text_len;
+    size_t total_received = 0;
 
-    if (received_len == 0) {
-        printf("FAIL: time out!");
-        close(fd);
-        return 1;
+    while (total_received < expected) {
+        // read consumes
+        ssize_t received_len = read(fd, received + total_received, expected - received_len); 
+
+        if (received_len < 0) {
+            perror("read");
+            close(fd);
+            return 1;
+        }
+
+        if (received_len == 0) {
+            printf("FAIL: time out after receiving %zu / %zu bytes", total_received, expected);
+            close(fd);
+            return 1;
+        }
+
+        total_received += (size_t)received_len;
     }
 
     received[received_len] = '\0';

@@ -110,6 +110,7 @@ int main() {
     }
 
     received[received_len] = '\0';
+    printf("Received text: %.*s\n", (int)received_len, received);
    
     if ((size_t)received_len == text_len && memcmp(received, text, text_len) == 0) {
         // note that memcmp returns 0 if no difference!

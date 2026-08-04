@@ -1,5 +1,16 @@
 /* Since this is the first time writing anything for Linux machines
- * This will contain too many comments than it needs to have.        */
+ * This will contain too many comments than it needs to have. 
+ *
+ * pins connected: pin8 - pin10
+ *
+ * ssuze_t: signed integer, count of bytes or negative error status
+ *
+ * <References>
+ * - https://github.com/Johannes4Linux/Linux_Embedded_Interfaces
+ *
+ *
+ *
+ * */
 
 #include <stdio.h>
 #include <string.h>
@@ -21,47 +32,91 @@
 
 int main() {
     int fd, len;
-    char text[255];
     struct termios options; /* serial ports setting */
 
     /* file descript = first serial port on linux 
-     *                 flags: read and writ
-     *                 non-blocking / returns immediatly if no bytes are available
+     *                 flags: read and write
      *                 no control tty */
-    fd = open("/dev/serial0", O_RDWR | O_NDELAY | O_NOCTTY);
+    fd = open("/dev/serial0", O_RDWR | O_NOCTTY);
 
     if (fd < 0) {
         perror("Error opening serial port");
         return -1;
+    } else {
+        printf("Connection to Port Opend fd = %d \n", fd);
     }
 
     /* Read current serial port settings */
-    // tcgetattr(fd, &options);
+    // you should do this to initialize "options"
+    if (tcgetattr(fd, &options) == -1) {
+        perror("tcgetattr");
+        close(fd);
+        return 1;
+    }
    
-    /* Set up serial port */
+    /* Set up serial port (modify the config locally) */
+
+    // 9600 bps, 8 data pits, ignore modem-control signals, enable receiver
     options.c_cflag = B9600 | CS8 | CLOCAL | CREAD;
     options.c_iflag = IGNPAR; /* ignore parity error */
     options.c_oflag = 0;
     options.c_lflag = 0;
 
-    /* Apply the settings */ 
+    options.c_cc[VMIN] = 1;   // minimum number of bytes read() wants
+    options.c_cc[VTIME] = 10; // timeout (in tenths of a second)
+
+
     tcflush(fd, TCIFLUSH); /* flush input buffer */
-    tcsetattr(fd, TCSANOW, &options);
 
-    /* Write from serial port */
-    strcpy(text, "Hello from my RPi\n\r");
-    len = strlen(text);
-    len = write(fd, text, len);
-    printf("wrote %d bytes over UART\n", len);
+    /* Apply the settings */ 
+    if (tcsetattr(fd, TCSANOW, &options) == -1) {
+        perror("tcsetattr");
+        close(fd);
+        return 1;
+    };
 
-    printf("You have 5s to send me some input data... \n");
-    sleep(5);
+    
+    /* ============================================
+     * we wish to check if 
+     * Message travels throough TX -> Jumper -> RX 
+     * ============================================ */
 
-    /* Read from serial port */
-    memset(text, 0, 255);
-    len = read(fd, text, 255);
-    printf("Received %d bytes\n", len);
-    printf("Received string: %s\n", text);
+    char text[255];
+    strcpy(text, "Hello from my RPi\r\n");
+    size_t text_len = strlen(text);
+
+    ssize_t written = write(fd, text, text_len);
+    printf("Wrote %zd bytes over UART\n", written);
+
+    if (tcdrain(fd) == -1) {
+        perror("tcdrain");
+        close(fd);
+        return 1;
+    }
+
+    char received[255];
+    ssize_t received_len = read(fd, received, sizeof(received) - 1);
+
+    if (received_len < 0) {
+        perror("read");
+        close(fd);
+        return 1;
+    }
+
+    if (received_len == 0) {
+        printf("FAIL: time out!");
+        close(fd);
+        return 1;
+    }
+
+    received[received_len] = '\0';
+   
+    if ((size_t)received_len == text_len && memcmp(received, text, text_len) == 0) {
+        // note that memcmp returns 0 if no difference!
+        printf("PASS: uart loopback succeeded\n");
+    } else {
+        printf("FAIL: received data does not match transmitted data\n");
+    }
 
     close(fd);
     return 0;

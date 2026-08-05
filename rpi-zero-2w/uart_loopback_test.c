@@ -29,13 +29,12 @@
  */
 
 int main() {
-    int fd, len;
     struct termios options; /* serial ports setting */
 
     /* file descript = first serial port on linux 
      *                 flags: read and write
      *                 no control tty */
-    fd = open("/dev/serial0", O_RDWR | O_NOCTTY);
+    int fd = open("/dev/serial0", O_RDWR | O_NOCTTY);
 
     if (fd < 0) {
         perror("Error opening serial port");

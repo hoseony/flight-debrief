@@ -116,7 +116,7 @@ int main() {
                 }
 
                 if ((expected_len != 0) && (position == expected_len)) {
-                    printf("Complete frame: %zu bytes |", expected_len);
+                    printf("Complete frame: %zu bytes\n", expected_len);
 
                     for (size_t i = 0; i < expected_len; i++) {
                         printf("%02X ", frame[i]);

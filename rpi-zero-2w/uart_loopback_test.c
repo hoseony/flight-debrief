@@ -44,6 +44,13 @@ int main() {
         printf("Connection to Port Opend fd = %d \n", fd);
     }
 
+    /* Linux Manual Page of tcgetattr()
+     * https://www.man7.org/linux/man-pages//man3/tcgetattr.3p.html
+     *  - Applications should always do a tcgetattr(), save the termios
+     *    structure values returned, and then do a tcsetattr(), changing
+     *    only the necessary fields.
+     */
+
     /* Read current serial port settings */
     // you should do this to initialize "options"
     if (tcgetattr(fd, &options) == -1) {

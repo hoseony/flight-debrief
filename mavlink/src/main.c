@@ -181,7 +181,7 @@ int main() {
                     // something is wrong if its hearbeat and len != 9
                     if (message_id == 0 && frame[1] == 9) {
                         MAVLinkHeartbeat_t heartbeat;
-                        heartbeat.custom_mode = frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[12] << 24);
+                        heartbeat.custom_mode = frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[13] << 24);
                         heartbeat.type = frame[14];
                         heartbeat.autopilot = frame[15];
                         heartbeat.base_mode = frame[16];

@@ -3,13 +3,60 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <stdint.h>
+
 
 typedef enum State {
     WAIT_MAGIC, 
     READ_FRAME,
 } state_t;
 
+// I directly took this from the documentation and modified a little to meet c syntax
+typedef struct {
+    uint8_t magic;              ///< protocol magic marker
+    uint8_t len;                ///< Length of payload
+    uint8_t incompat_flags;     ///< flags that must be understood
+    uint8_t compat_flags;       ///< flags that can be ignored if not understood
+    uint8_t seq;                ///< Sequence of packet
+    uint8_t sysid;              ///< ID of message sender system/aircraft
+    uint8_t compid;             ///< ID of the message sender component
 
+    uint32_t msgid;
+ /* uint8_t msgid 0:7;          ///< first 8 bits of the ID of the message
+    uint8_t msgid 8:15;         ///< middle 8 bits of the ID of the message
+    uint8_t msgid 16:23;        ///< last 8 bits of the ID of the message    */
+
+    uint8_t payload[255];       ///< A maximum of 255 payload bytes
+    uint16_t checksum;          ///< CRC-16/MCRF4XX
+
+    uint8_t signature[13];
+    int has_signature;
+} MAVLinkPacket_t;
+
+// this is how it is ordered!
+typedef struct {
+    uint32_t custom_mode;
+    uint8_t type;
+    uint8_t autopilot;
+    uint8_t base_mode;
+    uint8_t system_status;
+    uint8_t mavlink_version;
+} MAVLinkHeartbeat_t;
+
+
+
+/// CRC algorithm
+void crc_accumulate(unsigned char byte, uint16_t *crc) {
+    unsigned char tmp;
+
+    tmp = byte ^ (unsigned char)(*crc & 0xFF);
+    tmp ^= (unsigned char)(tmp << 4);
+
+    *crc = (*crc >> 8)
+         ^ ((uint16_t)tmp << 8)
+         ^ ((uint16_t)tmp << 3)
+         ^ ((uint16_t)tmp >> 4);
+}
 int main() {
     int fd, len;
     struct termios options; /* serial ports setting */
@@ -66,7 +113,9 @@ int main() {
     /* Actual Buffer to read */
     unsigned char buffer[256];
 
+    MAVLinkPacket_t packet;
     state_t state = WAIT_MAGIC;
+
     unsigned char frame[280];
     size_t position = 0;
     size_t expected_len = 0;
@@ -99,7 +148,7 @@ int main() {
 
                 frame[position++] = byte;
 
-                /* At position == 3
+                /* [At position == 3]
                  * frame[0] = magic (0XFD)
                  * frame[1] = *payload*_length
                  * frame[2] = incompat_flags
@@ -123,6 +172,33 @@ int main() {
                     }
 
                     putchar('\n');
+
+                    /* reconstruct the message ID */
+
+                    uint32_t message_id = (frame[7]) | (frame[8] << 8) | (frame[9] << 16);
+
+                    // HEARTBEAT
+                    // something is wrong if its hearbeat and len != 9
+                    if (message_id == 0 && frame[1] == 9) {
+                        MAVLinkHeartbeat_t heartbeat;
+                        heartbeat.custom_mode = frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[12] << 24);
+                        heartbeat.type = frame[14];
+                        heartbeat.autopilot = frame[15];
+                        heartbeat.base_mode = frame[16];
+                        heartbeat.system_status = frame[17];
+                        heartbeat.mavlink_version = frame[18];
+
+                        printf("HEARTBEAT\n");
+                        printf("  sysid:           %u\n", frame[5]);
+                        printf("  compid:          %u\n", frame[6]);
+                        printf("  sequence:        %u\n", frame[4]);
+                        printf("  custom_mode:     0x%08X\n", (unsigned int)heartbeat.custom_mode);
+                        printf("  type:            %u\n", heartbeat.type);
+                        printf("  autopilot:       %u\n", heartbeat.autopilot);
+                        printf("  base_mode:       0x%02X\n", heartbeat.base_mode);
+                        printf("  system_status:   %u\n", heartbeat.system_status);
+                        printf("  mavlink_version: %u\n", heartbeat.mavlink_version);
+                    }
 
                     // reset the state
                     state = WAIT_MAGIC;

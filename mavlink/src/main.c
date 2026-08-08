@@ -9,7 +9,7 @@
 
 /*----- Function Prototypes -----*/
 void crc_accumulate(unsigned char byte, uint16_t *crc);
-uint32_t read_u32(uint8_t *bytes);
+uint32_t read_u32_le(uint8_t *bytes);
 
 /*----- Entry Point -----*/
 int main() {
@@ -120,6 +120,9 @@ int main() {
                 }
 
                 if ((expected_len != 0) && (position == expected_len)) {
+
+                    uint32_t message_id = (frame[7]) | (frame[8] << 8) | (frame[9] << 16);
+                    /*
                     printf("Complete frame: %zu bytes\n", expected_len);
 
                     for (size_t i = 0; i < expected_len; i++) {
@@ -128,9 +131,8 @@ int main() {
 
                     putchar('\n');
 
-                    /* reconstruct the message ID */
+                    reconstruct the message ID
 
-                    uint32_t message_id = (frame[7]) | (frame[8] << 8) | (frame[9] << 16);
 
                     // HEARTBEAT
                     // something is wrong if its hearbeat and len != 9
@@ -139,35 +141,47 @@ int main() {
                         heartbeat.custom_mode = 
                             frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[13] << 24);
 
-                        heartbeat.type = frame[14];
-                        heartbeat.autopilot = frame[15];
-                        heartbeat.base_mode = frame[16];
-                        heartbeat.system_status = frame[17];
+                        heartbeat.type            = frame[14];
+                        heartbeat.autopilot       = frame[15];
+                        heartbeat.base_mode       = frame[16];
+                        heartbeat.system_status   = frame[17];
                         heartbeat.mavlink_version = frame[18];
 
-                        printf("HEARTBEAT\n");
-                        printf("  sysid:           %u\n", frame[5]);
-                        printf("  compid:          %u\n", frame[6]);
-                        printf("  sequence:        %u\n", frame[4]);
+                        printf("== HEARTBEAT ==\n");
+                        printf("  sysid:           %u\n",     frame[5]);
+                        printf("  compid:          %u\n",     frame[6]);
+                        printf("  sequence:        %u\n",     frame[4]);
                         printf("  custom_mode:     0x%08X\n", (unsigned int)heartbeat.custom_mode);
-                        printf("  type:            %u\n", heartbeat.type);
-                        printf("  autopilot:       %u\n", heartbeat.autopilot);
+                        printf("  type:            %u\n",     heartbeat.type);
+                        printf("  autopilot:       %u\n",     heartbeat.autopilot);
                         printf("  base_mode:       0x%02X\n", heartbeat.base_mode);
-                        printf("  system_status:   %u\n", heartbeat.system_status);
-                        printf("  mavlink_version: %u\n\n", heartbeat.mavlink_version);
+                        printf("  system_status:   %u\n",     heartbeat.system_status);
+                        printf("  mavlink_version: %u\n\n",   heartbeat.mavlink_version);
 
                         // saving this into some file... how? idk
                     }
+                    */
 
                     if (message_id == 30 && frame[1] == 28) {
                         MAVLinkAttitude attitude;
 
-                        attitude.time_boot_ms = frame[0];
-                        attitude.roll = frame[0];
-                        attitude.pitch = frame[0];
-                        attitude.rollspeed = frame[0];
-                        attitude.pitchspeed = frame[0];
-                        attitude.yawspeed = frame[0];
+                        attitude.time_boot_ms = read_u32_le(&frame[10]);
+                        attitude.roll         = read_u32_le(&frame[14]);
+                        attitude.pitch        = read_u32_le(&frame[18]);
+                        attitude.rollspeed    = read_u32_le(&frame[22]);
+                        attitude.pitchspeed   = read_u32_le(&frame[26]);
+                        attitude.yawspeed     = read_u32_le(&frame[30]);
+
+                        const float rad_to_deg = 57.2957795f;
+
+                        printf("ATTITUDE\n");
+                        printf("  time_boot_ms: %u ms\n",       (unsigned int)attitude.time_boot_ms);
+                        printf("  roll:         %8.3f deg\n",   attitude.roll * rad_to_deg);
+                        printf("  pitch:        %8.3f deg\n",   attitude.pitch * rad_to_deg);
+                        printf("  yaw:          %8.3f deg\n",   attitude.yaw * rad_to_deg);
+                        printf("  rollspeed:    %8.3f deg/s\n", attitude.rollspeed * rad_to_deg);
+                        printf("  pitchspeed:   %8.3f deg/s\n", attitude.pitchspeed * rad_to_deg);
+                        printf("  yawspeed:     %8.3f deg/s\n", attitude.yawspeed * rad_to_deg);
                     }
 
                     // reset the state
@@ -188,9 +202,9 @@ int main() {
 /*----- Helper Functions -----*/
 
 /// read 4 bytes consecutively and returns into one uint32_t
-uint32_t read_u32(uint8_t *bytes) {
-    // should do error checking...
-    return (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24));
+uint32_t read_u32_le(uint8_t *bytes) {
+    return ((uint32_t)bytes[0] | (uint32_t)(bytes[1] << 8) 
+            | (uint32_t)(bytes[2] << 16) | (uint32_t)(bytes[3] << 24));
 }
 
 /// CRC algorithm

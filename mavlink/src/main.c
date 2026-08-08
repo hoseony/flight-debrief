@@ -5,58 +5,13 @@
 #include <termios.h>
 #include <stdint.h>
 
+#include "../include/types.h"
 
-typedef enum State {
-    WAIT_MAGIC, 
-    READ_FRAME,
-} state_t;
+/*----- Function Prototypes -----*/
+void crc_accumulate(unsigned char byte, uint16_t *crc);
+uint32_t read_u32(uint8_t *bytes);
 
-// I directly took this from the documentation and modified a little to meet c syntax
-typedef struct {
-    uint8_t magic;              ///< protocol magic marker
-    uint8_t len;                ///< Length of payload
-    uint8_t incompat_flags;     ///< flags that must be understood
-    uint8_t compat_flags;       ///< flags that can be ignored if not understood
-    uint8_t seq;                ///< Sequence of packet
-    uint8_t sysid;              ///< ID of message sender system/aircraft
-    uint8_t compid;             ///< ID of the message sender component
-
-    uint32_t msgid;
- /* uint8_t msgid 0:7;          ///< first 8 bits of the ID of the message
-    uint8_t msgid 8:15;         ///< middle 8 bits of the ID of the message
-    uint8_t msgid 16:23;        ///< last 8 bits of the ID of the message    */
-
-    uint8_t payload[255];       ///< A maximum of 255 payload bytes
-    uint16_t checksum;          ///< CRC-16/MCRF4XX
-
-    uint8_t signature[13];
-    int has_signature;
-} MAVLinkPacket_t;
-
-// this is how it is ordered!
-typedef struct {
-    uint32_t custom_mode;
-    uint8_t type;
-    uint8_t autopilot;
-    uint8_t base_mode;
-    uint8_t system_status;
-    uint8_t mavlink_version;
-} MAVLinkHeartbeat_t;
-
-
-
-/// CRC algorithm
-void crc_accumulate(unsigned char byte, uint16_t *crc) {
-    unsigned char tmp;
-
-    tmp = byte ^ (unsigned char)(*crc & 0xFF);
-    tmp ^= (unsigned char)(tmp << 4);
-
-    *crc = (*crc >> 8)
-         ^ ((uint16_t)tmp << 8)
-         ^ ((uint16_t)tmp << 3)
-         ^ ((uint16_t)tmp >> 4);
-}
+/*----- Entry Point -----*/
 int main() {
     int fd, len;
     struct termios options; /* serial ports setting */
@@ -181,7 +136,9 @@ int main() {
                     // something is wrong if its hearbeat and len != 9
                     if (message_id == 0 && frame[1] == 9) {
                         MAVLinkHeartbeat_t heartbeat;
-                        heartbeat.custom_mode = frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[13] << 24);
+                        heartbeat.custom_mode = 
+                            frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[12] << 24);
+
                         heartbeat.type = frame[14];
                         heartbeat.autopilot = frame[15];
                         heartbeat.base_mode = frame[16];
@@ -197,7 +154,20 @@ int main() {
                         printf("  autopilot:       %u\n", heartbeat.autopilot);
                         printf("  base_mode:       0x%02X\n", heartbeat.base_mode);
                         printf("  system_status:   %u\n", heartbeat.system_status);
-                        printf("  mavlink_version: %u\n", heartbeat.mavlink_version);
+                        printf("  mavlink_version: %u\n\n", heartbeat.mavlink_version);
+
+                        // saving this into some file... how? idk
+                    }
+
+                    if (message_id == 30 && frame[1] == 28) {
+                        MAVLinkAttitude attitude;
+
+                        attitude.time_boot_ms = frame[0];
+                        attitude.roll = frame[0];
+                        attitude.pitch = frame[0];
+                        attitude.rollspeed = frame[0];
+                        attitude.pitchspeed = frame[0];
+                        attitude.yawspeed = frame[0];
                     }
 
                     // reset the state
@@ -213,4 +183,25 @@ int main() {
 
     close(fd);
     return 0;
+}
+
+/*----- Helper Functions -----*/
+
+/// read 4 bytes consecutively and returns into one uint32_t
+uint32_t read_u32(uint8_t *bytes) {
+    // should do error checking...
+    return (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24));
+}
+
+/// CRC algorithm
+void crc_accumulate(unsigned char byte, uint16_t *crc) {
+    unsigned char tmp;
+
+    tmp = byte ^ (unsigned char)(*crc & 0xFF);
+    tmp ^= (unsigned char)(tmp << 4);
+
+    *crc = (*crc >> 8)
+         ^ ((uint16_t)tmp << 8)
+         ^ ((uint16_t)tmp << 3)
+         ^ ((uint16_t)tmp >> 4);
 }

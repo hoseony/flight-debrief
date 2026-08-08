@@ -137,7 +137,7 @@ int main() {
                     if (message_id == 0 && frame[1] == 9) {
                         MAVLinkHeartbeat_t heartbeat;
                         heartbeat.custom_mode = 
-                            frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[12] << 24);
+                            frame[10] | (frame[11] << 8) | (frame[12] << 16) | (frame[13] << 24);
 
                         heartbeat.type = frame[14];
                         heartbeat.autopilot = frame[15];

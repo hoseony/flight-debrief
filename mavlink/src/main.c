@@ -65,6 +65,20 @@ int main() {
         return 1;
     }; 
 
+
+    /* Open the file */
+    FILE* attitude_log;
+    attitude_log = fopen("../out/attitude.csv", "w");
+
+    if (attitude_log == NULL) {
+        perror("fopen attitude.csv");
+        close(fd);
+        return 1;
+    }
+
+    fprintf(attitude_log, "time,roll,pitch,yaw\n");
+    fflush(attitude_log);
+
     /* Actual Buffer to read */
     unsigned char buffer[256];
 
@@ -173,7 +187,7 @@ int main() {
                         attitude.yawspeed     = read_u32_le(&frame[30]);
 
                         const float rad_to_deg = 57.2957795f;
-
+/*
                         printf("ATTITUDE\n");
                         printf("  time_boot_ms: %u ms\n",       (unsigned int)attitude.time_boot_ms);
                         printf("  roll:         %8.3f deg\n",   attitude.roll * rad_to_deg);
@@ -182,6 +196,15 @@ int main() {
                         printf("  rollspeed:    %8.3f deg/s\n", attitude.rollspeed * rad_to_deg);
                         printf("  pitchspeed:   %8.3f deg/s\n", attitude.pitchspeed * rad_to_deg);
                         printf("  yawspeed:     %8.3f deg/s\n", attitude.yawspeed * rad_to_deg);
+*/
+                        /* sending the data to gnuplot */
+
+                        double time_s   = attitude.time_boot_ms / 1000.0;
+                        double roll_deg = attitude.roll * rad_to_deg;
+                        double pitch    = attitude.roll * rad_to_deg;
+                        double yaw      = attitude.yaw * rad_to_deg;
+
+                        fprintf(attitude_log, "%.3f, %.3f, %.3f, %.3f", time_s, roll_deg, pitch, yaw);
                     }
 
                     // reset the state
@@ -195,6 +218,7 @@ int main() {
         fflush(stdout);
     }
 
+    fclose(attitude_log);
     close(fd);
     return 0;
 }

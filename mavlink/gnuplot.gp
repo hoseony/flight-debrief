@@ -1,5 +1,5 @@
 set terminal x11 noraise
-set datafile separater ","
+set datafile separator ","
 
 set title "PX4 Attitude"
 set xlabel "Time since boot (seconds)"

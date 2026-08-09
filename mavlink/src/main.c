@@ -180,12 +180,12 @@ int main() {
                     if (message_id == 30 && frame[1] == 28) {
                         MAVLinkAttitude attitude;
 
-                        attitude.time_boot_ms = read_f32_le(&frame[10]);
+                        attitude.time_boot_ms = read_u32_le(&frame[10]);
                         attitude.roll         = read_f32_le(&frame[14]);
                         attitude.pitch        = read_f32_le(&frame[18]);
                         attitude.yaw          = read_f32_le(&frame[22]);
-                        attitude.pitchspeed   = read_f32_le(&frame[26]);
-                        attitude.rollspeed    = read_f32_le(&frame[30]);
+                        attitude.rollspeed    = read_f32_le(&frame[26]);
+                        attitude.pitchspeed   = read_f32_le(&frame[30]);
                         attitude.yawspeed     = read_f32_le(&frame[34]);
 
                         const float rad_to_deg = 57.2957795f;

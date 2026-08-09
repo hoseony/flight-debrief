@@ -1,5 +1,5 @@
 set terminal x11 noraise
-set data separater ","
+set datafile separater ","
 
 set title "PX4 Attitude"
 set xlabel "Time since boot (seconds)"
@@ -8,7 +8,7 @@ set grid
 
 set key autotitle columnhead
 
-plot "attitude.csv" using 1:2 with lines linewidth 2, \
+plot "out/attitude.csv" using 1:2 with lines linewidth 2, \
      "" using 1:3 with lines linewidth 2, \
      "" using 1:4 with lines linewidth 2
 

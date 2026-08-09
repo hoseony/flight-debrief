@@ -10,6 +10,7 @@
 /*----- Function Prototypes -----*/
 void crc_accumulate(unsigned char byte, uint16_t *crc);
 uint32_t read_u32_le(uint8_t *bytes);
+float read_f32_le(uint8_t *bytes);
 
 /*----- Entry Point -----*/
 int main() {
@@ -179,12 +180,13 @@ int main() {
                     if (message_id == 30 && frame[1] == 28) {
                         MAVLinkAttitude attitude;
 
-                        attitude.time_boot_ms = read_u32_le(&frame[10]);
-                        attitude.roll         = read_u32_le(&frame[14]);
-                        attitude.pitch        = read_u32_le(&frame[18]);
-                        attitude.rollspeed    = read_u32_le(&frame[22]);
-                        attitude.pitchspeed   = read_u32_le(&frame[26]);
-                        attitude.yawspeed     = read_u32_le(&frame[30]);
+                        attitude.time_boot_ms = read_f32_le(&frame[10]);
+                        attitude.roll         = read_f32_le(&frame[14]);
+                        attitude.pitch        = read_f32_le(&frame[18]);
+                        attitude.yaw          = read_f32_le(&frame[22]);
+                        attitude.pitchspeed   = read_f32_le(&frame[26]);
+                        attitude.rollspeed    = read_f32_le(&frame[30]);
+                        attitude.yawspeed     = read_f32_le(&frame[34]);
 
                         const float rad_to_deg = 57.2957795f;
 /*
@@ -199,12 +201,14 @@ int main() {
 */
                         /* sending the data to gnuplot */
 
-                        double time_s   = attitude.time_boot_ms / 1000.0;
-                        double roll_deg = attitude.roll * rad_to_deg;
-                        double pitch    = attitude.roll * rad_to_deg;
-                        double yaw      = attitude.yaw * rad_to_deg;
+                        double time_s    = attitude.time_boot_ms / 1000.0;
+                        double roll_deg  = attitude.roll * rad_to_deg;
+                        double pitch_deg = attitude.pitch * rad_to_deg;
+                        double yaw_deg   = attitude.yaw * rad_to_deg;
 
-                        fprintf(attitude_log, "%.3f, %.3f, %.3f, %.3f", time_s, roll_deg, pitch, yaw);
+                        fprintf(attitude_log, "%.3f, %.3f, %.3f, %.3f\n", time_s, roll_deg, pitch_deg, yaw_deg);
+
+                        fflush(attitude_log);
                     }
 
                     // reset the state
@@ -229,6 +233,15 @@ int main() {
 uint32_t read_u32_le(uint8_t *bytes) {
     return ((uint32_t)bytes[0] | (uint32_t)(bytes[1] << 8) 
             | (uint32_t)(bytes[2] << 16) | (uint32_t)(bytes[3] << 24));
+}
+
+float read_f32_le(uint8_t *bytes) {
+    uint32_t bits = read_u32_le(bytes);
+    float value;
+
+    // memcpy!!
+    memcpy(&value, &bits, sizeof(value));
+    return value;
 }
 
 /// CRC algorithm

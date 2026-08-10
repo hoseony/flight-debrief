@@ -12,9 +12,9 @@ int serial_port_open(const char *device, speed_t baud_rate) {
     if (fd < 0) {
         perror("Error opening serial port");
         return -1;
-    } else {
+    } /*else {
         printf("Serial Port Opened: fd = %d\n", fd);
-    }
+    }*/
 
     struct termios options;
 
@@ -26,9 +26,8 @@ int serial_port_open(const char *device, speed_t baud_rate) {
 
     cfmakeraw(&options);
 
-    // set baud rate: 115200
-    cfsetispeed(&options, B115200);
-    cfsetospeed(&options, B115200);
+    cfsetispeed(&options, baud_rate);
+    cfsetospeed(&options, baud_rate);
 
     options.c_cflag |= CLOCAL;   // ignore modem-control signals
     options.c_cflag |= CREAD;    // enable receiver

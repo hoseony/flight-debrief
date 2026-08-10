@@ -9,11 +9,11 @@ bool log_create(FILE **file) {
     struct tm *t = localtime(&now);
 
     char time_str[64];
-    strftime(time_str, sizeof(time_str), "../out/attitude_%Y%m%d_%H_%M_%S.csv", t);
+    strftime(time_str, sizeof(time_str), "../out/log_%Y%m%d_%H_%M_%S.csv", t);
    
     *file = fopen(time_str, "w");
     
-    if (file == NULL) {
+    if (*file == NULL) {
         perror("fopen");
         return false;
     }
@@ -35,10 +35,4 @@ void log_write_attitude(FILE *file, const MAVLinkAttitude_t *attitude) {
     );
     
     fflush(file);
-}
-
-
-int main() {
-    FILE *file = NULL;
-    log_create(&file);
 }

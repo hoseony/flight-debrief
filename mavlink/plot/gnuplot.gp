@@ -12,5 +12,5 @@ plot "out/attitude.csv" using 1:2 with lines linewidth 2, \
      "" using 1:3 with lines linewidth 2, \
      "" using 1:4 with lines linewidth 2
 
-pause 0.2
+pause 0.5
 reread

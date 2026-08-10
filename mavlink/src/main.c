@@ -36,6 +36,7 @@ int main(void) {
     while(1){
         ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
 
+        // error handling
         if (bytes_read < 0) {
             /* errno is a value that C/POSIX functions use to explain why an operation failed
              * EINTR is when it was interrupted
@@ -49,12 +50,26 @@ int main(void) {
             break;
         }
 
+        // if read success
         for (ssize_t i = 0; i < bytes_read; i++) {
             bool frame_ready = mavlink_parser_consume(&parser, buffer[i], &completed_frame);
 
             if (!frame_ready) {
                 continue;
             }
+
+            uint32_t msgid = frame_msgid(&completed_frame);
+            
+            if (msgid != 30) {
+                continue;
+            }
+
+            if(!mavlink_frame_crc_valid(&completed_frame, 39)) {
+                fprintf(stderr, "invalid attitude crc\n");
+            } else {
+                fprintf(stderr, "crc valid");
+            }
+
 
             MAVLinkAttitude_t attitude;
 

@@ -28,12 +28,14 @@ float read_f32_le(const uint8_t *bytes) {
 
 /* MAVLink Decoding Functions */
 
+/* CRC Validation */
 /// CRC algorithm
+/// https://github.com/mavlink/c_library_v2/blob/master/checksum.h
 void crc_accumulate(unsigned char byte, uint16_t *crc) {
     unsigned char tmp;
 
-    tmp = byte ^ (unsigned char)(*crc & 0xFF);
-    tmp ^= (unsigned char)(tmp << 4);
+    tmp = byte ^ (uint8_t)(*crc & 0xFF);
+    tmp ^= tmp << 4;
 
     *crc = (*crc >> 8)
          ^ ((uint16_t)tmp << 8)
@@ -41,11 +43,42 @@ void crc_accumulate(unsigned char byte, uint16_t *crc) {
          ^ ((uint16_t)tmp >> 4);
 }
 
+uint16_t mavlink_frame_crc_calculate(const MAVLinkFrame_t *frame, uint8_t crc_extra) {
+    uint16_t crc = 0xFFFF;
+    size_t crc_position = 10 + frame->bytes[1];
+
+    for (int i = 1; i < crc_position; i++) {
+        crc_accumulate(frame->bytes[i], &crc);
+    }
+
+    crc_accumulate(crc_extra, &crc);
+
+    return crc;
+}
+
+bool mavlink_frame_crc_valid(const MAVLinkFrame_t *frame, uint8_t crc_extra) {
+    size_t crc_position = 10 + frame->bytes[1];
+    
+    uint16_t received_crc = 
+        (uint16_t)frame->bytes[crc_position] | ((uint16_t)frame->bytes[crc_position + 1] << 8);
+
+    uint16_t calculated_crc = mavlink_frame_crc_calculate(frame, crc_extra);
+
+    if (calculated_crc == received_crc) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+/* MAVLINK_DECODE */
+// for each msg type that I am going to use
+
 uint32_t frame_msgid(const MAVLinkFrame_t *frame) {
     return (frame->bytes[7] | (frame->bytes[8] << 8) | (frame->bytes[9] << 16));
 }
 
-/* for each msg type that I am going to use */
 bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t heartbeat) {
     if (frame_msgid(frame) == 0 && frame->bytes[1] == 9) {
         

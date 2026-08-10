@@ -59,15 +59,14 @@ int main(void) {
             }
 
             uint32_t msgid = frame_msgid(&completed_frame);
-            
+           
+            // checking CRC for attitude
             if (msgid != 30) {
                 continue;
             }
 
             if(!mavlink_frame_crc_valid(&completed_frame, 39)) {
-                fprintf(stderr, "invalid attitude crc\n");
-            } else {
-                fprintf(stderr, "crc valid");
+                fprintf(stderr, "Invalid Attitude CRC\n");
             }
 
 

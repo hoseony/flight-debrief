@@ -42,7 +42,7 @@ void crc_accumulate(unsigned char byte, uint16_t *crc) {
 }
 
 uint32_t frame_msgid(const MAVLinkFrame_t *frame) {
-    return (frame->bytes[0] | (frame->bytes[1] << 8) | (frame->bytes[2] << 16));
+    return (frame->bytes[7] | (frame->bytes[8] << 8) | (frame->bytes[9] << 16));
 }
 
 /* for each msg type that I am going to use */

@@ -57,7 +57,7 @@ typedef struct {
 } MAVLinkPacket_t;
 
 
-/// HEARTBEAT tells you that the system is still alive
+/* HEARTBEAT: message ID 0 */
 typedef struct {
     uint32_t custom_mode;
     uint8_t type;
@@ -67,7 +67,7 @@ typedef struct {
     uint8_t mavlink_version;
 } MAVLinkHeartbeat_t;
 
-/// Attitude of the system
+/* ATTITUDE: message ID 30 */
 typedef struct {
     uint32_t time_boot_ms;
     float roll;
@@ -76,7 +76,80 @@ typedef struct {
     float rollspeed;
     float pitchspeed;
     float yawspeed;
-
 } MAVLinkAttitude_t;
+
+/* ATTITUDE_QUATERNION: message ID 31 */
+typedef struct {
+    uint32_t time_boot_ms;
+    float q1;
+    float q2;
+    float q3;
+    float q4;
+    float rollspeed;
+    float pitchspeed;
+    float yawspeed;
+} MAVLinkAttitudeQuaternion_t;
+
+/* LOCAL_POSITION_NED: message ID 32 */
+typedef struct {
+    uint32_t time_boot_ms;
+    float x;
+    float y;
+    float z;
+    float vx;
+    float vy;
+    float vz;
+} MAVLinkLocalPositionNed_t;
+
+/* GLOBAL_POSITION_INT: message ID 33 */
+typedef struct {
+    uint32_t time_boot_ms;
+    int32_t lat;
+    int32_t lon;
+    int32_t alt;
+    int32_t relative_alt;
+    int16_t vx;
+    int16_t vy;
+    int16_t vz;
+    uint16_t hdg;
+} MAVLinkGlobalPositionInt_t;
+
+/* SET_POSITION_TARGET_LOCAL_NED: message ID 84 */
+typedef struct {
+    uint32_t time_boot_ms;
+    float x;
+    float y;
+    float z;
+    float vx;
+    float vy;
+    float vz;
+    float afx;
+    float afy;
+    float afz;
+    float yaw;
+    float yaw_rate;
+    uint16_t type_mask;
+    uint8_t target_system;
+    uint8_t target_component;
+    uint8_t coordinate_frame;
+} MAVLinkSetPositionTargetLocalNed_t;
+
+/* POSITION_TARGET_LOCAL_NED: message ID 85 */
+typedef struct {
+    uint32_t time_boot_ms;
+    float x;
+    float y;
+    float z;
+    float vx;
+    float vy;
+    float vz;
+    float afx;
+    float afy;
+    float afz;
+    float yaw;
+    float yaw_rate;
+    uint16_t type_mask;
+    uint8_t coordinate_frame;
+} MAVLinkPositionTargetLocalNed_t;
 
 #endif

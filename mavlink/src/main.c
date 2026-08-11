@@ -26,6 +26,7 @@ int main(void) {
         return 1;
     }
 
+    /* initialize mavlink parser */
     MAVLinkParser_t parser;
     MAVLinkFrame_t completed_frame;
 
@@ -33,6 +34,7 @@ int main(void) {
 
     uint8_t buffer[256];
 
+    /* main loop */
     while(1){
         ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
 
@@ -60,13 +62,14 @@ int main(void) {
 
             uint32_t msgid = frame_msgid(&completed_frame);
            
-            // checking CRC for attitude
+            /* testing CRC (attitude) */
             if (msgid != 30) {
                 continue;
             }
 
             if(!mavlink_frame_crc_valid(&completed_frame, 39)) {
                 fprintf(stderr, "Invalid Attitude CRC\n");
+                continue; // skip loggin
             }
 
 

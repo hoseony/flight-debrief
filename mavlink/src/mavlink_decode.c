@@ -4,11 +4,38 @@
 
 #include "../include/mavlink_types.h"
 
+/* function prototypes */
+uint16_t read_u16_le(const uint8_t *bytes);
+int16_t read_i16_le(const uint8_t *bytes);
+uint32_t read_u32_le(const uint8_t *bytes);
+int32_t read_i32_le(const uint8_t *bytes);
+float read_f32_le(const uint8_t *bytes);
+void crc_accumulate(uint8_t byte, uint16_t *crc);
+uint16_t mavlink_frame_crc_calculate(const MAVLinkFrame_t *frame, uint8_t crc_extra);
+bool mavlink_frame_crc_valid(const MAVLinkFrame_t *frame, uint8_t crc_extra);
+uint32_t frame_msgid(const MAVLinkFrame_t *frame);
+bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t *heartbeat);
+bool mavlink_decode_attitude(const MAVLinkFrame_t *frame, MAVLinkAttitude_t *attitude);
+bool mavlink_decode_attitudeQuaternion(const MAVLinkFrame_t *frame, MAVLinkAttitudeQuaternion_t *attitude_quaternion);
+bool mavlink_decode_localPositionNed(const MAVLinkFrame_t *frame, MAVLinkLocalPositionNed_t *position);
+bool mavlink_decode_globalPositionInt(const MAVLinkFrame_t *frame, MAVLinkGlobalPositionInt_t *position);
+bool mavlink_decode_positionTargetLocalNed(const MAVLinkFrame_t *frame, MAVLinkPositionTargetLocalNed_t *target);
+
 // you can do this to ensure float to be 32 bits
 _Static_assert( sizeof(float) == sizeof(uint32_t), "MAVLink requires a 32-bit float");
 
-
 /* Helper Functions */
+uint16_t read_u16_le(const uint8_t *bytes) {
+    return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
+}
+
+int16_t read_i16_le(const uint8_t *bytes) {
+    uint16_t bits = read_u16_le(bytes);
+    int16_t value;
+
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
 
 /// read 4 bytes consecutively and returns into one uint32_t
 uint32_t read_u32_le(const uint8_t *bytes) {
@@ -25,6 +52,15 @@ float read_f32_le(const uint8_t *bytes) {
     memcpy(&value, &bits, sizeof(value));
     return value;
 }
+
+int read_i32_le(const uint8_t *bytes) {
+    uint32_t bits = read_u32_le(bytes);
+    int32_t value;
+
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 
 /* MAVLink Decoding Functions */
 
@@ -72,45 +108,147 @@ bool mavlink_frame_crc_valid(const MAVLinkFrame_t *frame, uint8_t crc_extra) {
 }
 
 
-/* MAVLINK_DECODE */
-// for each msg type that I am going to use
+/// error handling function for mavlink decoder
+static bool frame_matches(const MAVLinkFrame_t *frame, uint32_t expected_msgid, uint8_t minimum_payload_length) {
+    if (frame == NULL) {
+        return false;
+    }
 
-uint32_t frame_msgid(const MAVLinkFrame_t *frame) {
-    return (frame->bytes[7] | (frame->bytes[8] << 8) | (frame->bytes[9] << 16));
-}
+    if (frame->length < 12u) {
+        return false;
+    }
 
-bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t heartbeat) {
-    if (frame_msgid(frame) == 0 && frame->bytes[1] == 9) {
-        
-        heartbeat.custom_mode = 
-            frame->bytes[10] | (frame->bytes[11] << 8) | (frame->bytes[12] << 16) | (frame->bytes[13] << 24);
+    if (frame->bytes[0] != MAVLINK2_MAGIC) {
+        return false;
+    }
 
-        heartbeat.type            = frame->bytes[14];
-        heartbeat.autopilot       = frame->bytes[15];
-        heartbeat.base_mode       = frame->bytes[16];
-        heartbeat.system_status   = frame->bytes[17];
-        heartbeat.mavlink_version = frame->bytes[18];
+    if (frame_msgid(frame) != expected_msgid) {
+        return false;
+    }
 
-    } else {
+    if (frame->bytes[1] < minimum_payload_length) {
+        return false;
+    }
+
+    if (frame->length < 12u + frame->bytes[1]) {
         return false;
     }
 
     return true;
 }
 
-bool mavlink_decode_attitude(const MAVLinkFrame_t *frame, MAVLinkAttitude_t *attitude) {
-    if (frame_msgid(frame) == 30 && frame->bytes[1] == 28) {
+/* MAVLINK_DECODE */
+// for each msg type that I am going to use
 
-        attitude->time_boot_ms = read_u32_le(&frame->bytes[10]);
-        attitude->roll         = read_f32_le(&frame->bytes[14]);
-        attitude->pitch        = read_f32_le(&frame->bytes[18]);
-        attitude->yaw          = read_f32_le(&frame->bytes[22]);
-        attitude->rollspeed    = read_f32_le(&frame->bytes[26]);
-        attitude->pitchspeed   = read_f32_le(&frame->bytes[30]);
-        attitude->yawspeed     = read_f32_le(&frame->bytes[34]);
-    } else {
+uint32_t frame_msgid(const MAVLinkFrame_t *frame) {
+    return ((uint32_t)frame->bytes[7] | ((uint32_t)frame->bytes[8] << 8) | ((uint32_t)frame->bytes[9] << 16));
+}
+
+bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t *heartbeat) {
+    if (heartbeat == NULL || !frame_matches(frame, 0, 9)) {
         return false;
     }
+
+    heartbeat->custom_mode 
+        = frame->bytes[10] | (frame->bytes[11] << 8) 
+        | (frame->bytes[12] << 16) | (frame->bytes[13] << 24);
+    heartbeat->type            = frame->bytes[14];
+    heartbeat->autopilot       = frame->bytes[15];
+    heartbeat->base_mode       = frame->bytes[16];
+    heartbeat->system_status   = frame->bytes[17];
+    heartbeat->mavlink_version = frame->bytes[18];
+
+    return true;
+}
+
+bool mavlink_decode_attitude(const MAVLinkFrame_t *frame, MAVLinkAttitude_t *attitude) {
+    if (attitude == NULL || !frame_matches(frame, 30, 28)) {
+        return false;
+    }
+
+    attitude->time_boot_ms = read_u32_le(&frame->bytes[10]);
+    attitude->roll         = read_f32_le(&frame->bytes[14]);
+    attitude->pitch        = read_f32_le(&frame->bytes[18]);
+    attitude->yaw          = read_f32_le(&frame->bytes[22]);
+    attitude->rollspeed    = read_f32_le(&frame->bytes[26]);
+    attitude->pitchspeed   = read_f32_le(&frame->bytes[30]);
+    attitude->yawspeed     = read_f32_le(&frame->bytes[34]);
+
+    return true;
+}
+
+bool mavlink_decode_attitudeQuaternion(const MAVLinkFrame_t *frame, MAVLinkAttitudeQuaternion_t *attitude_quaternion) {
+    if (attitude_quaternion== NULL || !frame_matches(frame, 31, 32)) {
+        return false;
+    }
+
+    attitude_quaternion->time_boot_ms = read_u32_le(&frame->bytes[10]);
+    attitude_quaternion->q1           = read_f32_le(&frame->bytes[14]);
+    attitude_quaternion->q2           = read_f32_le(&frame->bytes[18]);
+    attitude_quaternion->q3           = read_f32_le(&frame->bytes[22]);
+    attitude_quaternion->q4           = read_f32_le(&frame->bytes[26]);
+    attitude_quaternion->rollspeed    = read_f32_le(&frame->bytes[30]);
+    attitude_quaternion->pitchspeed   = read_f32_le(&frame->bytes[34]);
+    attitude_quaternion->yawspeed     = read_f32_le(&frame->bytes[38]);
+    /// for now I'm ignoring the extension...
+
+    return true;
+}
+
+bool mavlink_decode_localPositionNed(const MAVLinkFrame_t *frame, MAVLinkLocalPositionNed_t *local_position_ned) {
+    if (local_position_ned == NULL || !frame_matches(frame, 32, 28)) {
+        return false;
+    }
+
+    local_position_ned->time_boot_ms = read_u32_le(&frame->bytes[10]);
+    local_position_ned->x            = read_f32_le(&frame->bytes[14]);
+    local_position_ned->y            = read_f32_le(&frame->bytes[18]);
+    local_position_ned->z            = read_f32_le(&frame->bytes[22]);
+    local_position_ned->vx           = read_f32_le(&frame->bytes[26]);
+    local_position_ned->vy           = read_f32_le(&frame->bytes[30]);
+    local_position_ned->vz           = read_f32_le(&frame->bytes[34]);
+
+    return true;
+} 
+
+
+bool mavlink_decode_globalPositionInt(const MAVLinkFrame_t *frame, MAVLinkGlobalPositionInt_t *position){
+    if (position == NULL || !frame_matches(frame, 33, 28)) {
+        return false;
+    }
+
+    position->time_boot_ms = read_u32_le(&frame->bytes[10]);
+    position->lat          = read_i32_le(&frame->bytes[14]);
+    position->lon          = read_i32_le(&frame->bytes[18]);
+    position->alt          = read_i32_le(&frame->bytes[22]);
+    position->relative_alt = read_i32_le(&frame->bytes[26]);
+    position->vx           = read_i16_le(&frame->bytes[30]);
+    position->vy           = read_i16_le(&frame->bytes[32]);
+    position->vz           = read_i16_le(&frame->bytes[34]);
+    position->hdg          = read_u16_le(&frame->bytes[36]);
+
+    return true;
+}
+
+bool mavlink_decode_positionTargetLocalNed(const MAVLinkFrame_t *frame, MAVLinkPositionTargetLocalNed_t *target) {
+    if (target == NULL || !frame_matches(frame, 85, 51)) {
+        return false;
+    }
+
+    target->time_boot_ms     = read_u32_le(&frame->bytes[10]);
+    target->x                = read_f32_le(&frame->bytes[14]);
+    target->y                = read_f32_le(&frame->bytes[18]);
+    target->z                = read_f32_le(&frame->bytes[22]);
+    target->vx               = read_f32_le(&frame->bytes[26]);
+    target->vy               = read_f32_le(&frame->bytes[30]);
+    target->vz               = read_f32_le(&frame->bytes[34]);
+    target->afx              = read_f32_le(&frame->bytes[38]);
+    target->afy              = read_f32_le(&frame->bytes[42]);
+    target->afz              = read_f32_le(&frame->bytes[46]);
+    target->yaw              = read_f32_le(&frame->bytes[50]);
+    target->yaw_rate         = read_f32_le(&frame->bytes[54]);
+    target->type_mask        = read_u16_le(&frame->bytes[58]);
+    target->coordinate_frame = frame->bytes[60];
 
     return true;
 }

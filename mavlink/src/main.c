@@ -61,22 +61,18 @@ int main(void) {
             }
 
             uint32_t msgid = frame_msgid(&completed_frame);
-           
-            /* testing CRC (attitude) */
-            if (msgid != 30) {
+            uint8_t crc_extra; 
+
+            /* crc validatoin */
+            // get crc_extra
+            if(!mavlink_crc_extra_for(msgid, &crc_extra)) {
                 continue;
             }
-
-            if(!mavlink_frame_crc_valid(&completed_frame, 39)) {
-                fprintf(stderr, "Invalid Attitude CRC\n");
-                continue; // skip loggin
-            }
-
-
-            MAVLinkAttitude_t attitude;
-
-            if (mavlink_decode_attitude(&completed_frame, &attitude)) {
-                log_write_attitude(attitude_file, &attitude);
+            
+            // validate crc
+            if (!mavlink_frame_crc_valid(&completed_frame, crc_extra)) {
+                fprintf(stderr, "invalid crc for message %u\n", msgid);
+                continue;
             }
         }
     }

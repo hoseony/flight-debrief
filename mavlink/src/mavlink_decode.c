@@ -3,26 +3,11 @@
 #include <stdbool.h>
 
 #include "../include/mavlink_types.h"
-
-/* function prototypes */
-uint16_t read_u16_le(const uint8_t *bytes);
-int16_t read_i16_le(const uint8_t *bytes);
-uint32_t read_u32_le(const uint8_t *bytes);
-int32_t read_i32_le(const uint8_t *bytes);
-float read_f32_le(const uint8_t *bytes);
-void crc_accumulate(uint8_t byte, uint16_t *crc);
-uint16_t mavlink_frame_crc_calculate(const MAVLinkFrame_t *frame, uint8_t crc_extra);
-bool mavlink_frame_crc_valid(const MAVLinkFrame_t *frame, uint8_t crc_extra);
-uint32_t frame_msgid(const MAVLinkFrame_t *frame);
-bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t *heartbeat);
-bool mavlink_decode_attitude(const MAVLinkFrame_t *frame, MAVLinkAttitude_t *attitude);
-bool mavlink_decode_attitudeQuaternion(const MAVLinkFrame_t *frame, MAVLinkAttitudeQuaternion_t *attitude_quaternion);
-bool mavlink_decode_localPositionNed(const MAVLinkFrame_t *frame, MAVLinkLocalPositionNed_t *position);
-bool mavlink_decode_globalPositionInt(const MAVLinkFrame_t *frame, MAVLinkGlobalPositionInt_t *position);
-bool mavlink_decode_positionTargetLocalNed(const MAVLinkFrame_t *frame, MAVLinkPositionTargetLocalNed_t *target);
+#include "../include/mavlink_decode.h"
 
 // you can do this to ensure float to be 32 bits
 _Static_assert( sizeof(float) == sizeof(uint32_t), "MAVLink requires a 32-bit float");
+
 
 /* Helper Functions */
 uint16_t read_u16_le(const uint8_t *bytes) {
@@ -39,8 +24,10 @@ int16_t read_i16_le(const uint8_t *bytes) {
 
 /// read 4 bytes consecutively and returns into one uint32_t
 uint32_t read_u32_le(const uint8_t *bytes) {
-    return ((uint32_t)bytes[0] | (uint32_t)(bytes[1] << 8) 
-            | (uint32_t)(bytes[2] << 16) | (uint32_t)(bytes[3] << 24));
+    return ((uint32_t)bytes[0] 
+            | ((uint32_t)bytes[1] << 8)
+            | ((uint32_t)bytes[2] << 16) 
+            | ((uint32_t)bytes[3] << 24));
 }
 
 /// read 4 bytes consecutively and returns into one float
@@ -53,7 +40,7 @@ float read_f32_le(const uint8_t *bytes) {
     return value;
 }
 
-int read_i32_le(const uint8_t *bytes) {
+int32_t read_i32_le(const uint8_t *bytes) {
     uint32_t bits = read_u32_le(bytes);
     int32_t value;
 
@@ -83,7 +70,7 @@ uint16_t mavlink_frame_crc_calculate(const MAVLinkFrame_t *frame, uint8_t crc_ex
     uint16_t crc = 0xFFFF;
     size_t crc_position = 10 + frame->bytes[1];
 
-    for (int i = 1; i < crc_position; i++) {
+    for (size_t i = 1; i < crc_position; i++) {
         crc_accumulate(frame->bytes[i], &crc);
     }
 
@@ -93,18 +80,23 @@ uint16_t mavlink_frame_crc_calculate(const MAVLinkFrame_t *frame, uint8_t crc_ex
 }
 
 bool mavlink_frame_crc_valid(const MAVLinkFrame_t *frame, uint8_t crc_extra) {
+    if (frame == NULL || frame->length < 12u) {
+        return false;
+    }
+
     size_t crc_position = 10 + frame->bytes[1];
-    
-    uint16_t received_crc = 
-        (uint16_t)frame->bytes[crc_position] | ((uint16_t)frame->bytes[crc_position + 1] << 8);
+   
+    if (crc_position + 2 > frame->length) {
+        return false;
+    }
+
+    uint16_t received_crc 
+        = (uint16_t)frame->bytes[crc_position] 
+        | ((uint16_t)frame->bytes[crc_position + 1] << 8);
 
     uint16_t calculated_crc = mavlink_frame_crc_calculate(frame, crc_extra);
 
-    if (calculated_crc == received_crc) {
-        return true;
-    } else {
-        return false;
-    }
+    return calculated_crc == received_crc;
 }
 
 
@@ -137,6 +129,36 @@ static bool frame_matches(const MAVLinkFrame_t *frame, uint32_t expected_msgid, 
     return true;
 }
 
+bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra) {
+    if (crc_extra == NULL) {
+        return false;
+    }
+
+    switch (message_id) {
+        case 0:
+            *crc_extra = 50;
+            return true;
+        case 30:
+            *crc_extra = 39;
+            return true;
+        case 31:
+            *crc_extra = 246;
+            return true;
+        case 32:
+            *crc_extra = 185;
+            return true;
+        case 33:
+            *crc_extra = 104;
+            return true;
+        case 85:
+            *crc_extra = 140;
+            return true;
+        default:
+            return false;
+    }
+}
+
+
 /* MAVLINK_DECODE */
 // for each msg type that I am going to use
 
@@ -149,9 +171,7 @@ bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t *h
         return false;
     }
 
-    heartbeat->custom_mode 
-        = frame->bytes[10] | (frame->bytes[11] << 8) 
-        | (frame->bytes[12] << 16) | (frame->bytes[13] << 24);
+    heartbeat->custom_mode     = read_u32_le(&frame->bytes[10]);
     heartbeat->type            = frame->bytes[14];
     heartbeat->autopilot       = frame->bytes[15];
     heartbeat->base_mode       = frame->bytes[16];

@@ -7,6 +7,7 @@
 #include "../include/mavlink_types.h"
 #include "../include/log.h"
 
+// making files and directories in c is weird
 bool create_out_directory(void) {
     if (mkdir("out", 0755) == 0) {
         return true;
@@ -20,32 +21,38 @@ bool create_out_directory(void) {
     return false;
 }
 
-bool create_session_directory(char *path, size_t path_size) {
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "./out/log_%Y%m%d_%H_%M_%S.csv", t);
-
-    int result = sprintf(path, path_size, "out/%s", timestamp);
-}
-/*
-bool log_create(FILE **file) {
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-
-    char time_str[64];
-    strftime(time_str, sizeof(time_str), "./out/log_%Y%m%d_%H_%M_%S.csv", t);
-   
-    *file = fopen(time_str, "w");
+bool create_session_directory(MAVLinkLogs_t *logs) {
+    if (logs == NULL) {
+        return false;
+    }
     
-    if (*file == NULL) {
-        perror("fopen");
+    // ensure parent dir exist...
+    if (mkdir("out", 0755) == -1 && errno != EEXIST) {
+        perror("mkdir out");
         return false;
     }
 
-    return true;
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+
+    if (strftime(logs->session_directory, sizeof(logs->session_directory), "out/log_%Y%m%d_%H_%M_%S", t) == 0) {
+        fprintf(stderr, "session directory path is too long");
+        return false;
+    }
+
+    if (mkdir(logs->session_directory, 0755) == -1) {
+        if (errno == EEXIST) {
+            fprintf(stderr, "session directory already exists: %s\n", logs->session_directory);
+        } else {
+            perror("mkdir session directory");
+        }
+
+        return false;
+    }
+
+    return false;
 }
-*/
+
 void log_write_attitude(FILE *file, const MAVLinkAttitude_t *attitude) {
     fprintf(
         file,
@@ -61,3 +68,13 @@ void log_write_attitude(FILE *file, const MAVLinkAttitude_t *attitude) {
     
     fflush(file);
 }
+
+/*
+int main() {
+    create_out_directory();
+    MAVLinkLogs_t logs;
+    create_session_directory(&logs);
+
+    printf("testing create out & session dir");
+}
+*/

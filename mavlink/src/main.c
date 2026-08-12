@@ -21,7 +21,7 @@ int main(void) {
     printf("Serial Port Opened: fd = %d\n", fd);
 
     FILE *attitude_file = NULL;
-    if (!log_create(&attitude_file)) {
+    if (!log_open(&attitude_file)) {
         close(fd);
         return 1;
     }
@@ -74,6 +74,8 @@ int main(void) {
                 fprintf(stderr, "invalid crc for message %u\n", msgid);
                 continue;
             }
+
+
         }
     }
 

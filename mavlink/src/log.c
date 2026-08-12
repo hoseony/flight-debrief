@@ -50,7 +50,64 @@ bool create_session_directory(MAVLinkLogs_t *logs) {
         return false;
     }
 
-    return false;
+    return true;
+}
+
+FILE* create_log_file(const MAVLinkLogs_t *logs, const char *filename, const char *mode) {
+    if (logs == NULL || filename == NULL || mode == NULL) {
+        return false;
+    }
+
+    char path[256];
+
+    int length = snprintf(path, sizeof(path), "%s/%s", logs->session_directory, filename);
+
+    if (length < 0 || (size_t)length >= sizeof(path)) {
+        fprintf(stderr, "log path is too long\n");
+        return false;
+    }
+
+    FILE *file = fopen(path, mode);
+
+    if (file == NULL) {
+        perror(path);
+    }
+
+/*
+    logs->telemetry           = fopen("telemetry", "w");
+    logs->attitude            = fopen("attitude", "w");
+    logs->attitude_quaternion = fopen("attitude_quaternion", "w");
+    logs->local_position      = fopen("local_position", "w");
+    logs->global_position     = fopen("global_position", "w");
+    logs->position_target     = fopen("position_target", "w");
+*/
+    return file;
+}
+
+bool log_open(MAVLinkLogs_t *logs) {
+    if (logs == NULL) {
+        return false;
+    }
+
+    *logs = (MAVLinkLogs_t){0};
+
+    if (!create_session_directory(logs)) {
+        return false;
+    }
+
+    logs->telemetry           = create_log_file(logs, "telemetry.tlog",      "wb");
+    logs->attitude            = create_log_file(logs, "attitude",            "w");
+    logs->attitude_quaternion = create_log_file(logs, "attitude_quaternion", "w");
+    logs->local_position      = create_log_file(logs, "local_position",      "w");
+    logs->global_position     = create_log_file(logs, "global_position",     "w");
+    logs->position_target     = create_log_file(logs, "position_target",     "w");
+
+    if (logs->telemetry == NULL || logs->attitude == NULL || logs->attitude_quaternion == NULL
+            || logs->local_position == NULL || logs->global_position == NULL || logs->position_target == NULL) {
+        return false;
+    }
+
+    return true;
 }
 
 void log_write_attitude(FILE *file, const MAVLinkAttitude_t *attitude) {
@@ -69,12 +126,12 @@ void log_write_attitude(FILE *file, const MAVLinkAttitude_t *attitude) {
     fflush(file);
 }
 
-/*
+/* Example Code (or test function)
 int main() {
-    create_out_directory();
     MAVLinkLogs_t logs;
-    create_session_directory(&logs);
+    create_out_directory();
+    log_open(&logs);
 
-    printf("testing create out & session dir");
+    printf("testing create out & session dir\n");
 }
 */

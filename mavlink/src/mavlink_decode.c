@@ -8,7 +8,6 @@
 // you can do this to ensure float to be 32 bits
 _Static_assert( sizeof(float) == sizeof(uint32_t), "MAVLink requires a 32-bit float");
 
-
 /* Helper Functions */
 uint16_t read_u16_le(const uint8_t *bytes) {
     return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
@@ -54,6 +53,7 @@ int32_t read_i32_le(const uint8_t *bytes) {
 /* CRC Validation */
 /// CRC algorithm
 /// https://github.com/mavlink/c_library_v2/blob/master/checksum.h
+/// For our usage, CRC must be started from 0xFFFF! (that's what the documentation says)
 void crc_accumulate(unsigned char byte, uint16_t *crc) {
     unsigned char tmp;
 
@@ -129,6 +129,9 @@ static bool frame_matches(const MAVLinkFrame_t *frame, uint32_t expected_msgid, 
     return true;
 }
 
+// from the mavlink implementation, I could make calculation function
+// but for my case, it is faster and easier to straight bring the calculated constnats 
+// for each message types.
 bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra) {
     if (crc_extra == NULL) {
         return false;

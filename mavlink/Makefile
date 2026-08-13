@@ -11,7 +11,8 @@ SOURCES := \
 	src/serial_port.c \
 	src/mavlink_parser.c \
 	src/mavlink_decode.c \
-	src/log.c
+	src/log.c \
+	src/mavlink_dispatch.c
 
 OBJECTS := $(SOURCES:src/%.c=$(BUILD_DIR)/%.o)
 DEPS := $(OBJECTS:.o=.d)

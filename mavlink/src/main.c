@@ -17,24 +17,21 @@ int main(void) {
         perror("serial_port_open");
         return 1;
     }
-
     printf("Serial Port Opened: fd = %d\n", fd);
 
-    FILE *attitude_file = NULL;
-    if (!log_open(&attitude_file)) {
-        close(fd);
-        return 1;
-    }
+    /* create log files */
+    create_out_directory();
+    MAVLinkLogs_t logs;
+    log_open(&logs);
 
     /* initialize mavlink parser */
     MAVLinkParser_t parser;
     MAVLinkFrame_t completed_frame;
-
     mavlink_parser_init(&parser);
 
+    /* main loop */
     uint8_t buffer[256];
 
-    /* main loop */
     while(1){
         ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
 
@@ -60,6 +57,7 @@ int main(void) {
                 continue;
             }
 
+            /* maybe I should wrap this part into another function */
             uint32_t msgid = frame_msgid(&completed_frame);
             uint8_t crc_extra; 
 
@@ -75,11 +73,11 @@ int main(void) {
                 continue;
             }
 
-
+            /* log it */
         }
     }
 
-    fclose(attitude_file);
+    log_close(&logs);
     close(fd);
 
     return 0;

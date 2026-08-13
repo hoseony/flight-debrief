@@ -1,0 +1,6 @@
+/downloaded-logs/
+/mavlink/build/
+/mavlink/out/
+/mavlink/flight-debrief
+/mavlink/tlog-validator
+/mavlink/src/validator/a.out

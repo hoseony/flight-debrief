@@ -77,7 +77,29 @@ FILE* create_log_file(const MAVLinkLogs_t *logs, const char *filename, const cha
     return file;
 }
 
-bool log_open(MAVLinkLogs_t *logs) {
+bool log_tlog_open(MAVLinkLogs_t *logs) {
+    if (logs == NULL) {
+        return false;
+    }
+
+    *logs = (MAVLinkLogs_t){0};
+
+    if (!create_session_directory(logs)) {
+        return false;
+    }
+    
+    logs->telemetry = create_log_file(logs, "telemetry.tlog",          "wb");
+
+    if (logs->telemetry == NULL) {
+        log_tlog_close(logs);
+        return false;
+    }
+
+    return true;
+}
+
+
+bool log_csv_open(MAVLinkLogs_t *logs) {
     if (logs == NULL) {
         return false;
     }
@@ -88,16 +110,15 @@ bool log_open(MAVLinkLogs_t *logs) {
         return false;
     }
 
-    logs->telemetry           = create_log_file(logs, "telemetry.tlog",          "wb");
     logs->attitude            = create_log_file(logs, "attitude.csv",            "w");
     logs->attitude_quaternion = create_log_file(logs, "attitude_quaternion.csv", "w");
     logs->local_position      = create_log_file(logs, "local_position.csv",      "w");
     logs->global_position     = create_log_file(logs, "global_position.csv",     "w");
     logs->position_target     = create_log_file(logs, "position_target.csv",     "w");
 
-    if (logs->telemetry == NULL || logs->attitude == NULL || logs->attitude_quaternion == NULL
+    if (logs->attitude == NULL || logs->attitude_quaternion == NULL
             || logs->local_position == NULL || logs->global_position == NULL || logs->position_target == NULL) {
-        log_close(logs);
+        log_csv_close(logs);
         return false;
     }
 
@@ -108,6 +129,12 @@ bool log_open(MAVLinkLogs_t *logs) {
     fprintf(logs->local_position, "time_boot_ms,x_m,y_m,z_m,vx_m_s,vy_m_s,vz_m_s\n");
     fprintf(logs->global_position, "time_boot_ms,lat_deg_e7,lon_deg_e7,alt_mm,relative_alt_mm,vx_cm_s,vy_cm_s,vz_cm_s,hdg_cdeg\n");
     fprintf(logs->position_target, "time_boot_ms,x_m,y_m,z_m,vx_m_s,vy_m_s,vz_m_s,afx_m_s2,afy_m_s2,afz_m_s2,yaw_rad,yaw_rate_rad_s,type_mask,coordinate_frame\n");
+
+    fflush(logs->attitude);
+    fflush(logs->attitude_quaternion);
+    fflush(logs->local_position);
+    fflush(logs->global_position);
+    fflush(logs->position_target);
 
     return true;
 }
@@ -122,12 +149,19 @@ void close_file(FILE **file) {
     }
 }
 
-void log_close(MAVLinkLogs_t *logs) {
+void log_tlog_close(MAVLinkLogs_t *logs) {
     if (logs == NULL) {
         return;
     }
 
     close_file(&logs->telemetry);
+}
+
+void log_csv_close(MAVLinkLogs_t *logs) {
+    if (logs == NULL) {
+        return;
+    }
+
     close_file(&logs->attitude);
     close_file(&logs->attitude_quaternion);
     close_file(&logs->local_position);

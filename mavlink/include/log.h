@@ -21,8 +21,10 @@ bool create_out_directory(void);
 bool create_session_directory(MAVLinkLogs_t *logs);
 FILE* create_log_file(const MAVLinkLogs_t *logs, const char *filename, const char *mode);
 
-bool log_open(MAVLinkLogs_t *logs);
-void log_close(MAVLinkLogs_t *logs);
+bool log_tlog_open(MAVLinkLogs_t *logs);
+bool log_csv_open(MAVLinkLogs_t *logs);
+void log_tlog_close(MAVLinkLogs_t *logs);
+void log_csv_close(MAVLinkLogs_t *logs);
 
 bool log_write_frame(MAVLinkLogs_t *logs, const MAVLinkFrame_t *frame);
 

@@ -5,8 +5,8 @@
 #include <errno.h>
 #include <inttypes.h>
 
-#include "../include/mavlink_types.h"
-#include "../include/log.h"
+#include "../../include/mavlink_types.h"
+#include "../../include/log.h"
 
 /* setting up dirs and files for the logs */
 bool create_out_directory(void) {

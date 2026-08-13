@@ -1,4 +1,4 @@
-#include "../include/serial_port.h"
+#include "../../include/serial_port.h"
 
 #include <stdio.h>
 #include <fcntl.h>

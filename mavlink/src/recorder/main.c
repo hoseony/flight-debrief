@@ -5,10 +5,10 @@
 #include <errno.h>
 #include <signal.h>
 
-#include "../include/serial_port.h"
-#include "../include/log.h"
-#include "../include/mavlink_parser.h"
-#include "../include/mavlink_decode.h"
+#include "../../include/serial_port.h"
+#include "../../include/log.h"
+#include "../../include/mavlink_parser.h"
+#include "../../include/mavlink_decode.h"
 // #include "../include/mavlink_dispatch.h"
 
 /* sigint is a interrupt signal that user can send with pressing ctrl+c

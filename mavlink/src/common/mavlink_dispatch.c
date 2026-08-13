@@ -1,9 +1,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "../include/mavlink_decode.h"
-#include "../include/mavlink_types.h"
-#include "../include/log.h"
+#include "../../include/mavlink_decode.h"
+#include "../../include/mavlink_types.h"
+#include "../../include/log.h"
 
 void mavlink_handle_frame(const MAVLinkFrame_t *frame, const MAVLinkLogs_t *logs, uint32_t msgid){
     /* log it straight into the .tlog first */ 

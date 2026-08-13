@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "../include/mavlink_types.h"
-#include "../include/mavlink_decode.h"
+#include "../../include/mavlink_types.h"
+#include "../../include/mavlink_decode.h"
 
 // you can do this to ensure float to be 32 bits
 _Static_assert( sizeof(float) == sizeof(uint32_t), "MAVLink requires a 32-bit float");

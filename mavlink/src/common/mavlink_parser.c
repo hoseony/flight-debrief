@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "../include/mavlink_types.h"
+#include "../../include/mavlink_types.h"
 
 static void mavlink_parser_reset(MAVLinkParser_t *parser) {
     parser->state = WAIT_MAGIC;

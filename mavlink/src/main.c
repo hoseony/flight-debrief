@@ -8,6 +8,7 @@
 #include "../include/log.h"
 #include "../include/mavlink_parser.h"
 #include "../include/mavlink_decode.h"
+#include "../include/mavlink_dispatch.h"
 
 int main(void) {
     /* open serial port */
@@ -20,9 +21,12 @@ int main(void) {
     printf("Serial Port Opened: fd = %d\n", fd);
 
     /* create log files */
-    create_out_directory();
     MAVLinkLogs_t logs;
-    log_open(&logs);
+    
+    if (!log_open(&logs)) {
+        close(fd);
+        return 1;
+    }
 
     /* initialize mavlink parser */
     MAVLinkParser_t parser;
@@ -31,8 +35,9 @@ int main(void) {
 
     /* main loop */
     uint8_t buffer[256];
+    bool running = true;
 
-    while(1){
+    while(running) {
         ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
 
         // error handling
@@ -57,6 +62,12 @@ int main(void) {
                 continue;
             }
 
+            if (!log_write_frame(&logs, &completed_frame)) {
+                fprintf(stderr, "failed to write telemetry frame\n");
+                running = false;
+                break;
+            }
+
             /* maybe I should wrap this part into another function */
             uint32_t msgid = frame_msgid(&completed_frame);
             uint8_t crc_extra; 
@@ -74,6 +85,7 @@ int main(void) {
             }
 
             /* log it */
+            mavlink_handle_frame(&completed_frame, &logs, msgid);
         }
     }
 

@@ -21,7 +21,7 @@ int serial_port_open(const char *device, speed_t baud_rate) {
     if (tcgetattr(fd, &options) == -1) {
         perror("tcgetattr");
         close(fd);
-        return 1;
+        return -1;
     }
 
     cfmakeraw(&options);
@@ -50,7 +50,7 @@ int serial_port_open(const char *device, speed_t baud_rate) {
     if (tcsetattr(fd, TCSANOW, &options) == -1) {
         perror("tcsetattr");
         close(fd);
-        return 1;
+        return -1;
     }; 
 
     return fd;

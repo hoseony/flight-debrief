@@ -88,22 +88,22 @@ bool log_open(MAVLinkLogs_t *logs) {
         return false;
     }
 
-    logs->telemetry           = create_log_file(logs, "telemetry.tlog",      "wb");
-    logs->attitude            = create_log_file(logs, "attitude",            "w");
-    logs->attitude_quaternion = create_log_file(logs, "attitude_quaternion", "w");
-    logs->local_position      = create_log_file(logs, "local_position",      "w");
-    logs->global_position     = create_log_file(logs, "global_position",     "w");
-    logs->position_target     = create_log_file(logs, "position_target",     "w");
+    logs->telemetry           = create_log_file(logs, "telemetry.tlog",          "wb");
+    logs->attitude            = create_log_file(logs, "attitude.csv",            "w");
+    logs->attitude_quaternion = create_log_file(logs, "attitude_quaternion.csv", "w");
+    logs->local_position      = create_log_file(logs, "local_position.csv",      "w");
+    logs->global_position     = create_log_file(logs, "global_position.csv",     "w");
+    logs->position_target     = create_log_file(logs, "position_target.csv",     "w");
 
     if (logs->telemetry == NULL || logs->attitude == NULL || logs->attitude_quaternion == NULL
             || logs->local_position == NULL || logs->global_position == NULL || logs->position_target == NULL) {
-        perror("log_open failed... :(\n");
+        log_close(logs);
         return false;
     }
 
     /* write header */
     // I am NEVER doing this again :(((
-    fprintf(logs->attitude, "time_boot_ms,roll_rad,pitch_rad,yaw_rad,rollspeed_rad,pitchspeed_s,yawspeed_rad_s\n");
+    fprintf(logs->attitude, "time_boot_ms,roll_rad,pitch_rad,yaw_rad,rollspeed_rad_s,pitchspeed_rad_s,yawspeed_rad_s\n");
     fprintf(logs->attitude_quaternion, "time_boot_ms,q1,q2,q3,q4,rollspeed_rad_s,pitchspeed_rad_s,yawspeed_rad_s\n");
     fprintf(logs->local_position, "time_boot_ms,x_m,y_m,z_m,vx_m_s,vy_m_s,vz_m_s\n");
     fprintf(logs->global_position, "time_boot_ms,lat_deg_e7,lon_deg_e7,alt_mm,relative_alt_mm,vx_cm_s,vy_cm_s,vz_cm_s,hdg_cdeg\n");
@@ -118,6 +118,7 @@ bool log_open(MAVLinkLogs_t *logs) {
 void close_file(FILE **file) {
     if (file != NULL && *file != NULL) {
         fclose(*file);
+        *file = NULL;
     }
 }
 
@@ -146,6 +147,52 @@ int main() {
 
 
 /* writing to the actual log files */
+
+/* .tlog */
+// [8-byte receive timestamp][complete MAVLinkFrame]
+/// writes timestamp + raw data as .tlog file(logs->telemetry)
+bool log_write_frame(MAVLinkLogs_t *logs, const MAVLinkFrame_t *frame) {
+    if (logs == NULL || frame == NULL || logs->telemetry == NULL) {
+        return false;
+    }
+
+    // current time
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) == -1) {
+        perror("clock_gettime");
+        return false;
+    }
+
+    // convert to microseconds
+    uint64_t timestamp_us = (uint64_t)now.tv_sec * 1000000u + (uint64_t)now.tv_nsec / 1000u;
+    uint8_t timestamp_bytes[8];
+
+    // split it into 8 bytes
+    for (int i = 0; i < 8; i++) {
+        timestamp_bytes[7-i] = (uint8_t)(timestamp_us >> (i * 8));
+    }
+
+    // write the timestamp
+    if (fwrite(timestamp_bytes, 1, 8, logs->telemetry) != 8) {
+        perror("fwrite timestamp");
+        return false;
+    }
+
+    // write raw packet
+    if (fwrite(frame->bytes, 1, frame->length, logs->telemetry) != frame->length) {
+        perror("fwrite MAVLink frame");
+        return false;
+    }
+
+    if (fflush(logs->telemetry) == EOF) {
+        perror("fflush telemetry");
+        return false;
+    }
+
+    return true;
+}
+
+
 // OK, wth am I even doing at this point
 void log_write_attitude(FILE *file, const MAVLinkAttitude_t *attitude) {
     if (file == NULL || attitude == NULL) {

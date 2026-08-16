@@ -8,6 +8,7 @@ CPPFLAGS := -Iinclude -D_DEFAULT_SOURCE
 CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O2 -g
 
 COMMON_SOURCES := \
+	src/common/flight_data.c \
 	src/common/log.c \
 	src/common/mavlink_decode.c \
 	src/common/mavlink_dispatch.c \

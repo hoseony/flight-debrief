@@ -1,34 +1,27 @@
+// [ Some note about ../validator ]
+//
+// The pi will only record the .tlog file while flying (that's the recorder part).
+// I did this to avoid assigning too much task to the pi, as I wasn't confident about 
+// it's computing power. Then everything else will be done after the recording or the flight.
+// 
+// This is one of the post-process related program.
+// It will decode the stored .tlog file (path read from the command line argument)
+// and store the ones with valid crc and known message type for this project
+// as limited amount of messages were implemented.
+
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <stdlib.h>
 
 #include "../../include/mavlink_types.h"
 #include "../../include/mavlink_decode.h"
 #include "../../include/flight_data.h"
-
-bool flight_data_add_attitude(FlightData_t *flight_data, uint64_t timestamp_us, MAVLinkAttitude_t *attitude);
-void flight_data_free(FlightData_t *flight_data);
-
-// The pi will only record the .tlog file while flying. 
-// I did this to avoid doing too much processing within the pi itself.
-// Then everything else will be done after the recording (after the flight).
-// let's decode the stored .tlog file...
-
-// this struct will be used to completely decode the .tlog file 
-// .tlog file have 8bit timestamp and then the frame
-typedef struct {
-    uint64_t timestamp_us;
-    MAVLinkFrame_t frame;
-} TLogRecord_t;
-
-// This project has limited number of crc support for now.
-// But, it should be able to tell if the frame is valid, invalid,
-// or unspported. Then only save correct frame into....
+#include "../../include/tlog.h"
 
 int main(int argc, char* argv[]) {
+
     /* opening the file from the command line arg */
     if (argc != 2) {
         fprintf(stderr, "usage: %s <telemetry.tlog>\n", argv[0]);
@@ -42,13 +35,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    FlightData_t flight_data = {0};
+    /* maing validation loop */
+    // the loop breaks when there no more things to read
+    // (count == 0 && feof(file))
 
-    /* maing validating loop */
-    for (int j = 0; j < 2; j++) {
+    FlightData_t flight_data = {0};
+    printf("READING %s\n", argv[1]);
+
+    while (true) {
         TLogRecord_t tlog = {0};
 
-        /* read timestamp */
+        /* ---------- read timestamp ---------- */
         uint8_t timestamp_bytes[8];
         size_t count = fread(timestamp_bytes, 1, 8, file);
 
@@ -57,17 +54,20 @@ int main(int argc, char* argv[]) {
             break;
         }
 
+        // uhh that's not good
         if (count != 8) {
             fprintf(stderr, "truncated timestamp\n");
+            break;
         }
 
         for (size_t i = 0; i < 8; i++) {
             tlog.timestamp_us = (tlog.timestamp_us << 8) | timestamp_bytes[i];
         }
 
-        printf("%" PRIu64 "\n", tlog.timestamp_us);
+        printf("\n[%" PRIu64 "]\n", tlog.timestamp_us);
 
-        /* reconstruct frame */
+
+        /* ---------- reconstruct frame ---------- */
         if (fread(tlog.frame.bytes, 1, 3, file) != 3) {
             // do something? idk this an error
             return 1;
@@ -94,9 +94,11 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        /* crc validation here */
-        printf("validating: %s\n", argv[1]);
+        if (frame_length % 8 != 0) {
+            putchar('\n');
+        }
 
+        /* ---------- crc validation here ----------*/
         uint32_t msgid = frame_msgid(&tlog.frame);
         uint8_t crc_extra; 
 
@@ -106,6 +108,7 @@ int main(int argc, char* argv[]) {
         }
         
         // validate crc
+        // msg with unknown crcs will get skipped here
         if (!mavlink_frame_crc_valid(&tlog.frame, crc_extra)) {
             fprintf(stderr, "invalid crc for message %u\n", msgid);
             continue;
@@ -114,13 +117,96 @@ int main(int argc, char* argv[]) {
         putchar('\n');
 
         /* actual decoding happens here */
+        // YES, I WILL MOVE THIS TO ANOTHER FNCTION LATER
         switch(msgid) {
-            case 30: {
-                // attitude decode -> save
-                MAVLinkAttitude_t attitude;
-                mavlink_decode_attitude(&tlog.frame, &attitude);
+            case 0: {
+                MAVLinkHeartbeat_t heartbeat;
 
-                flight_data_add_attitude(&flight_data, tlog.timestamp_us, &attitude);
+                if (!mavlink_decode_heartbeat(&tlog.frame, &heartbeat)) {
+                    fprintf(stderr, "failed to decode heartbeat\n");
+                    break;
+                }
+
+                if (!flight_data_add_heartbeat(&flight_data, tlog.timestamp_us, &heartbeat)) {
+                    fprintf(stderr, "failed to store heartbeat\n");
+                }
+
+                break;
+            }
+
+            case 30: {
+                MAVLinkAttitude_t attitude;
+
+                if (!mavlink_decode_attitude(&tlog.frame, &attitude)) {
+                    fprintf(stderr, "failed to decode attitude\n");
+                    break;
+                }
+
+                if (!flight_data_add_attitude(&flight_data, tlog.timestamp_us, &attitude)) {
+                    fprintf(stderr, "failed to store attitude\n");
+                }
+
+                break;
+            }
+
+            case 31: {
+                MAVLinkAttitudeQuaternion_t attitude;
+
+                if (!mavlink_decode_attitudeQuaternion(&tlog.frame, &attitude)) {
+                    fprintf(stderr, "failed to decode attitude quaternion\n");
+                    break;
+                }
+
+                if (!flight_data_add_attitude_quaternion(&flight_data, tlog.timestamp_us, &attitude)) {
+                    fprintf(stderr, "failed to store attitude quaternion\n");
+                }
+
+                break;
+            }
+
+            case 32: {
+                MAVLinkLocalPositionNed_t position;
+
+                if (!mavlink_decode_localPositionNed(&tlog.frame, &position)) {
+                    fprintf(stderr, "failed to decode local position\n");
+                    break;
+                }
+
+                if (!flight_data_add_local_position(&flight_data, tlog.timestamp_us, &position)) {
+                    fprintf(stderr, "failed to store local position\n");
+                }
+
+                break;
+            }
+
+            case 33: {
+                MAVLinkGlobalPositionInt_t position;
+
+                if (!mavlink_decode_globalPositionInt(&tlog.frame, &position)) {
+                    fprintf(stderr, "failed to decode global position\n");
+                    break;
+                }
+
+                if (!flight_data_add_global_position(&flight_data, tlog.timestamp_us, &position)) {
+                    fprintf(stderr, "failed to store global position\n");
+                }
+
+                break;
+            }
+
+            case 85: {
+                MAVLinkPositionTargetLocalNed_t target;
+
+                if (!mavlink_decode_positionTargetLocalNed(&tlog.frame, &target)) {
+                    fprintf(stderr, "failed to decode position target\n");
+                    break;
+                }
+
+                if (!flight_data_add_position_target(&flight_data, tlog.timestamp_us, &target)) {
+                    fprintf(stderr, "failed to store position target\n");
+                }
+
+                break;
             }
 
             default:
@@ -138,49 +224,4 @@ int main(int argc, char* argv[]) {
     }
 
     return 0;
-}
-
-
-bool flight_data_add_attitude(FlightData_t *flight_data, uint64_t timestamp_us, MAVLinkAttitude_t *attitude) {
-    if (flight_data == NULL) {
-        return false;
-    }
-
-    // if we need more memory
-    if (flight_data->attitude_capacity == flight_data->attitude_count) {
-        // default memory: 256 for now
-        size_t new_capacity = (flight_data->attitude_capacity == 0) ? 256 : flight_data->attitude_capacity * 2;
-
-        AttitudeSample_t *new_samples = realloc(flight_data->attitudes, new_capacity * sizeof(*new_samples));
-
-        if (new_samples == NULL) {
-            return false;
-        }
-
-        // if reallocation success, overwrite
-        flight_data->attitudes = new_samples;
-        flight_data->attitude_capacity = new_capacity;
-    }
-
-    // then we need to finally append the datase
-    // sample points to the next "empty" index
-    AttitudeSample_t *sample = &flight_data->attitudes[flight_data->attitude_count];
-    // put datas in sample
-    sample->timestamp_us = timestamp_us;
-    // copy the entire attitude under sample
-    sample->attitude = *attitude;
-    flight_data->attitude_count++;
-
-    return true;
-}
-
-void flight_data_free(FlightData_t *flight_data) {
-    if (flight_data == NULL) {
-        return;
-    }
-
-    free (flight_data->attitudes);
-    flight_data->attitudes = NULL;
-    flight_data->attitude_count = 0;
-    flight_data->attitude_capacity = 0;
 }

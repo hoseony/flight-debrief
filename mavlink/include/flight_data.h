@@ -1,6 +1,8 @@
 #ifndef FLIGHT_DATA_H
 #define FLIGHT_DATA_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "mavlink_types.h"
 
@@ -70,5 +72,14 @@ typedef struct {
     size_t position_target_count;
     size_t position_target_capacity;
 } FlightData_t;
+
+bool flight_data_add_heartbeat(FlightData_t *data, uint64_t timestamp_us, const MAVLinkHeartbeat_t *heartbeat);
+bool flight_data_add_attitude(FlightData_t *data, uint64_t timestamp_us, const MAVLinkAttitude_t *attitude);
+bool flight_data_add_attitude_quaternion(FlightData_t *data, uint64_t timestamp_us, const MAVLinkAttitudeQuaternion_t *attitude);
+bool flight_data_add_local_position(FlightData_t *data, uint64_t timestamp_us, const MAVLinkLocalPositionNed_t *position);
+bool flight_data_add_global_position(FlightData_t *data, uint64_t timestamp_us, const MAVLinkGlobalPositionInt_t *position);
+bool flight_data_add_set_position_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkSetPositionTargetLocalNed_t *target);
+bool flight_data_add_position_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkPositionTargetLocalNed_t *target);
+void flight_data_free(FlightData_t *data);
 
 #endif

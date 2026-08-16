@@ -18,7 +18,8 @@ RECORDER_SOURCES := \
 	src/recorder/main.c \
 	src/recorder/serial_port.c
 
-VALIDATOR_SOURCES := src/validator/main.c
+VALIDATOR_SOURCES := src/validator/main.c \
+					 src/validator/validator.c
 
 COMMON_OBJECTS := $(COMMON_SOURCES:%.c=$(BUILD_DIR)/%.o)
 RECORDER_OBJECTS := $(RECORDER_SOURCES:%.c=$(BUILD_DIR)/%.o)

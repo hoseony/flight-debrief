@@ -19,6 +19,7 @@
 #include "../../include/mavlink_decode.h"
 #include "../../include/flight_data.h"
 #include "../../include/tlog.h"
+#include "../../include/validator.h"
 
 int main(int argc, char* argv[]) {
 
@@ -116,102 +117,11 @@ int main(int argc, char* argv[]) {
 
         putchar('\n');
 
-        /* actual decoding happens here */
-        // YES, I WILL MOVE THIS TO ANOTHER FNCTION LATER
-        switch(msgid) {
-            case 0: {
-                MAVLinkHeartbeat_t heartbeat;
-
-                if (!mavlink_decode_heartbeat(&tlog.frame, &heartbeat)) {
-                    fprintf(stderr, "failed to decode heartbeat\n");
-                    break;
-                }
-
-                if (!flight_data_add_heartbeat(&flight_data, tlog.timestamp_us, &heartbeat)) {
-                    fprintf(stderr, "failed to store heartbeat\n");
-                }
-
-                break;
-            }
-
-            case 30: {
-                MAVLinkAttitude_t attitude;
-
-                if (!mavlink_decode_attitude(&tlog.frame, &attitude)) {
-                    fprintf(stderr, "failed to decode attitude\n");
-                    break;
-                }
-
-                if (!flight_data_add_attitude(&flight_data, tlog.timestamp_us, &attitude)) {
-                    fprintf(stderr, "failed to store attitude\n");
-                }
-
-                break;
-            }
-
-            case 31: {
-                MAVLinkAttitudeQuaternion_t attitude;
-
-                if (!mavlink_decode_attitudeQuaternion(&tlog.frame, &attitude)) {
-                    fprintf(stderr, "failed to decode attitude quaternion\n");
-                    break;
-                }
-
-                if (!flight_data_add_attitude_quaternion(&flight_data, tlog.timestamp_us, &attitude)) {
-                    fprintf(stderr, "failed to store attitude quaternion\n");
-                }
-
-                break;
-            }
-
-            case 32: {
-                MAVLinkLocalPositionNed_t position;
-
-                if (!mavlink_decode_localPositionNed(&tlog.frame, &position)) {
-                    fprintf(stderr, "failed to decode local position\n");
-                    break;
-                }
-
-                if (!flight_data_add_local_position(&flight_data, tlog.timestamp_us, &position)) {
-                    fprintf(stderr, "failed to store local position\n");
-                }
-
-                break;
-            }
-
-            case 33: {
-                MAVLinkGlobalPositionInt_t position;
-
-                if (!mavlink_decode_globalPositionInt(&tlog.frame, &position)) {
-                    fprintf(stderr, "failed to decode global position\n");
-                    break;
-                }
-
-                if (!flight_data_add_global_position(&flight_data, tlog.timestamp_us, &position)) {
-                    fprintf(stderr, "failed to store global position\n");
-                }
-
-                break;
-            }
-
-            case 85: {
-                MAVLinkPositionTargetLocalNed_t target;
-
-                if (!mavlink_decode_positionTargetLocalNed(&tlog.frame, &target)) {
-                    fprintf(stderr, "failed to decode position target\n");
-                    break;
-                }
-
-                if (!flight_data_add_position_target(&flight_data, tlog.timestamp_us, &target)) {
-                    fprintf(stderr, "failed to store position target\n");
-                }
-
-                break;
-            }
-
-            default:
-                break;
+        /* ---------- decoding / storing ----------*/
+        if (!validator_handle_frame(&tlog, &flight_data, msgid)) {
+            fprintf(stderr, "failed to decode or store message %u\n", msgid);
         }
+
     }
 
     flight_data_free(&flight_data);

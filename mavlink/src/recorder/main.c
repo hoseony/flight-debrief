@@ -4,16 +4,20 @@
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
 
 #include "../../include/serial_port.h"
+#include "../../include/udp_port.h"
 #include "../../include/log.h"
 #include "../../include/mavlink_parser.h"
-#include "../../include/mavlink_decode.h"
+// #include "../../include/mavlink_decode.h"
 // #include "../include/mavlink_dispatch.h"
 
-/* sigint is a interrupt signal that user can send with pressing ctrl+c
- * I need to correctly handle this so everything is closed and etc...
- */
+/* sigint is a interrupt signal that user can send by pressing ctrl+c
+ * I need to correctly handle this so everything is closed and etc...*/
+
 static volatile sig_atomic_t stop_requested = 0;
 
 static void handle_sigint(int signal_number) {
@@ -21,7 +25,7 @@ static void handle_sigint(int signal_number) {
     stop_requested = 1;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     // signal vector "template" used in sigaction call
     // initialize the struct
     struct sigaction action = {0};
@@ -40,13 +44,37 @@ int main(void) {
         return 1;
     }
 
+    // will get input argument for serial or udp
+    // and baudrate 
+    
+    if (argc < 3) {
+        fprintf(stderr, "Ussage:\n");
+        fprintf(stderr, " (1) %s serial <device>\n", argv[0]);
+        fprintf(stderr, "       e.g. ./flight-debrief serial /dev/serial0");
+        fprintf(stderr, " (2) %s udp <port>\n", argv[0]);
+        fprintf(stderr, "       e.g. ./flight-debrief udp 14550");
+        return 1;
+    }
+
     /* open serial port */
-    int fd = serial_port_open("/dev/serial0", B115200);
+    int fd;
+
+    if (strcmp(argv[1], "serial") == 0) {
+        fd = serial_port_open(argv[2], B115200);
+    } else if (strcmp(argv[1], "udp") == 0) {
+        uint16_t port;
+        sscanf(argv[2], "%" PRIu16, &port);
+        fd = udp_port_open(port);
+    } else {
+        fprintf(stderr, "unnkown input mode: %s\n", argv[1]);
+        return 1;
+    }
 
     if (fd < 0) {
         perror("serial_port_open");
         return 1;
     }
+
     printf("Serial Port Opened: fd = %d\n", fd);
 
     /* create log files */

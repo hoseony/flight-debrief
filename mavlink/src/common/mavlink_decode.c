@@ -153,6 +153,9 @@ bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra) {
         case 33:
             *crc_extra = 104;
             return true;
+        case 84:
+            *crc_extra = 143;
+            return true;
         case 85:
             *crc_extra = 140;
             return true;
@@ -249,6 +252,31 @@ bool mavlink_decode_globalPositionInt(const MAVLinkFrame_t *frame, MAVLinkGlobal
     position->vy           = read_i16_le(&frame->bytes[32]);
     position->vz           = read_i16_le(&frame->bytes[34]);
     position->hdg          = read_u16_le(&frame->bytes[36]);
+
+    return true;
+}
+
+bool mavlink_decode_setPositionTargetLocalNed(const MAVLinkFrame_t *frame, MAVLinkSetPositionTargetLocalNed_t *target) {
+    if (target == NULL || !frame_matches(frame, 84, 53)) {
+        return false;
+    }
+
+    target->time_boot_ms     = read_u32_le(&frame->bytes[10]);
+    target->x                = read_f32_le(&frame->bytes[14]);
+    target->y                = read_f32_le(&frame->bytes[18]);
+    target->z                = read_f32_le(&frame->bytes[22]);
+    target->vx               = read_f32_le(&frame->bytes[26]);
+    target->vy               = read_f32_le(&frame->bytes[30]);
+    target->vz               = read_f32_le(&frame->bytes[34]);
+    target->afx              = read_f32_le(&frame->bytes[38]);
+    target->afy              = read_f32_le(&frame->bytes[42]);
+    target->afz              = read_f32_le(&frame->bytes[46]);
+    target->yaw              = read_f32_le(&frame->bytes[50]);
+    target->yaw_rate         = read_f32_le(&frame->bytes[54]);
+    target->type_mask        = read_u16_le(&frame->bytes[58]);
+    target->target_system    = frame->bytes[60];
+    target->target_component = frame->bytes[61];
+    target->coordinate_frame = frame->bytes[62];
 
     return true;
 }

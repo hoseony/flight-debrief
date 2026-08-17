@@ -53,8 +53,6 @@ int main(int argc, char* argv[]) {
         TLogRecord_t tlog = {0};
         TLogReadResult_t read_result = tlog_read(file, &tlog);
 
-        records_read++; 
-
         if (read_result == TLOG_READ_EOF) {
             break;
         }
@@ -65,23 +63,7 @@ int main(int argc, char* argv[]) {
             break;
         }
 
-        // just for printing, reading is done in tlog_read
-    
-        /*
-        printf("\n[%" PRIu64 "]\n", tlog.timestamp_us);
-       
-        for (size_t i = 0; i < tlog.frame.length; i++) {
-            printf("%02X", tlog.frame.bytes[i]);
-
-            if ( ((i + 1) % 8) == 0) {
-                putchar('\n');
-            }
-        }
-
-        if (tlog.frame.length % 8 != 0) {
-            putchar('\n');
-        }
-        */
+        records_read++; 
 
         /* ---------- crc validation here ----------*/
         uint32_t msgid = frame_msgid(&tlog.frame);

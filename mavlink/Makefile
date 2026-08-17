@@ -17,7 +17,8 @@ COMMON_SOURCES := \
 
 RECORDER_SOURCES := \
 	src/recorder/main.c \
-	src/recorder/serial_port.c
+	src/recorder/serial_port.c \
+	src/recorder/udp_port.c
 
 VALIDATOR_SOURCES := src/validator/main.c \
 					 src/validator/validator.c

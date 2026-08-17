@@ -14,6 +14,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <stdbool.h>
 
 #include "../../include/mavlink_types.h"
 #include "../../include/mavlink_decode.h"
@@ -22,8 +23,9 @@
 #include "../../include/validator.h"
 
 int main(int argc, char* argv[]) {
+    int exit_status = 0;
 
-    /* opening the file from the command line arg */
+    /* ---------- open the file ---------- */
     if (argc != 2) {
         fprintf(stderr, "usage: %s <telemetry.tlog>\n", argv[0]);
         return 1;
@@ -36,58 +38,39 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    /* maing validation loop */
-    // the loop breaks when there no more things to read
-    // (count == 0 && feof(file))
-
+    /* ---------- main validator loop ---------- */
     FlightData_t flight_data = {0};
     printf("READING %s\n", argv[1]);
 
+    size_t records_read = 0;
+    size_t valid_frames = 0;
+    size_t invalid_crc = 0;
+    size_t unknown_crc = 0;
+
     while (true) {
+
+        /* ---------- read timestamp and MAVLink frame ---------- */
         TLogRecord_t tlog = {0};
+        TLogReadResult_t read_result = tlog_read(file, &tlog);
 
-        /* ---------- read timestamp ---------- */
-        uint8_t timestamp_bytes[8];
-        size_t count = fread(timestamp_bytes, 1, 8, file);
+        records_read++; 
 
-        // no more data exist
-        if (count == 0 && feof(file)) {
+        if (read_result == TLOG_READ_EOF) {
             break;
         }
 
-        // uhh that's not good
-        if (count != 8) {
-            fprintf(stderr, "truncated timestamp\n");
+        if (read_result == TLOG_READ_ERROR) {
+            fprintf(stderr, "failed to read tlog...\n");
+            exit_status = 1;
             break;
         }
 
-        for (size_t i = 0; i < 8; i++) {
-            tlog.timestamp_us = (tlog.timestamp_us << 8) | timestamp_bytes[i];
-        }
-
+        // just for printing, reading is done in tlog_read
+    
+        /*
         printf("\n[%" PRIu64 "]\n", tlog.timestamp_us);
-
-
-        /* ---------- reconstruct frame ---------- */
-        if (fread(tlog.frame.bytes, 1, 3, file) != 3) {
-            // do something? idk this an error
-            return 1;
-        }
-        
-        size_t frame_length = 10 + tlog.frame.bytes[1] + 2;
-        if (tlog.frame.bytes[2] & 0x01) {
-            frame_length += 13;
-        }
-
-        size_t remaining = frame_length - 3u;
-        if (fread(&tlog.frame.bytes[3], 1, remaining, file) != remaining) {
-            // same case as above, this also an error, couldn't read enough
-            return 1;
-        }
-
-        tlog.frame.length = frame_length;
-        
-        for (size_t i = 0; i < frame_length; i++) {
+       
+        for (size_t i = 0; i < tlog.frame.length; i++) {
             printf("%02X", tlog.frame.bytes[i]);
 
             if ( ((i + 1) % 8) == 0) {
@@ -95,9 +78,10 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (frame_length % 8 != 0) {
+        if (tlog.frame.length % 8 != 0) {
             putchar('\n');
         }
+        */
 
         /* ---------- crc validation here ----------*/
         uint32_t msgid = frame_msgid(&tlog.frame);
@@ -105,6 +89,7 @@ int main(int argc, char* argv[]) {
 
         // get crc_extra
         if(!mavlink_crc_extra_for(msgid, &crc_extra)) {
+            unknown_crc++;
             continue;
         }
         
@@ -112,10 +97,11 @@ int main(int argc, char* argv[]) {
         // msg with unknown crcs will get skipped here
         if (!mavlink_frame_crc_valid(&tlog.frame, crc_extra)) {
             fprintf(stderr, "invalid crc for message %u\n", msgid);
+            invalid_crc++;
             continue;
         }
 
-        putchar('\n');
+        valid_frames++;
 
         /* ---------- decoding / storing ----------*/
         if (!validator_handle_frame(&tlog, &flight_data, msgid)) {
@@ -123,9 +109,8 @@ int main(int argc, char* argv[]) {
         }
 
     }
-
+    print_read_summary(&flight_data, records_read, valid_frames, invalid_crc, unknown_crc);
     flight_data_free(&flight_data);
-
 
     /* close the file */
     if (fclose(file) == EOF) {
@@ -133,5 +118,5 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    return 0;
+    return exit_status;
 }

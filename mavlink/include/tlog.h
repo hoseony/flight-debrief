@@ -2,7 +2,10 @@
 #define TLOG_H
 
 #include <stdint.h>
+#include <stdio.h>
+
 #include "mavlink_types.h"
+#include "flight_data.h"
 
 /// this struct will be used to completely decode the .tlog file 
 /// .tlog file have 8bit timestamp followed by the frame (actual telemetry data).
@@ -19,5 +22,7 @@ typedef enum {
     TLOG_READ_ERROR
 } TLogReadResult_t;
 
+bool validator_read_frame(FILE *file, TLogRecord_t *tlog);
+TLogReadResult_t tlog_read(FILE *file, TLogRecord_t *tlog);
 
 #endif

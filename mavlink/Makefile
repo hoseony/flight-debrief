@@ -12,7 +12,8 @@ COMMON_SOURCES := \
 	src/common/log.c \
 	src/common/mavlink_decode.c \
 	src/common/mavlink_dispatch.c \
-	src/common/mavlink_parser.c
+	src/common/mavlink_parser.c \
+	src/common/tlog.c
 
 RECORDER_SOURCES := \
 	src/recorder/main.c \

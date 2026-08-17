@@ -129,6 +129,23 @@ static bool frame_matches(const MAVLinkFrame_t *frame, uint32_t expected_msgid, 
     return true;
 }
 
+static bool copy_zero_padded_payload(const MAVLinkFrame_t *frame, uint32_t expected_msgid, uint8_t *payload, size_t payload_size) {
+    if (payload == NULL || !frame_matches(frame, expected_msgid, 0)) {
+        return false;
+    }
+
+    memset(payload, 0, payload_size);
+
+    size_t copy_length = frame->bytes[1];
+
+    if (copy_length > payload_size) {
+        copy_length = payload_size;
+    }
+
+    memcpy(payload, &frame->bytes[10], copy_length);
+    return true;
+}
+
 // from the mavlink implementation, I could make calculation function
 // but for my case, it is faster and easier to straight bring the calculated constnats 
 // for each message types.
@@ -140,6 +157,21 @@ bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra) {
     switch (message_id) {
         case 0:
             *crc_extra = 50;
+            return true;
+        case 1:
+            *crc_extra = 124;
+            return true;
+        case 4:
+            *crc_extra = 237;
+            return true;
+        case 8:
+            *crc_extra = 117;
+            return true;
+        case 24:
+            *crc_extra = 24;
+            return true;
+        case 29:
+            *crc_extra = 115;
             return true;
         case 30:
             *crc_extra = 39;
@@ -153,11 +185,77 @@ bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra) {
         case 33:
             *crc_extra = 104;
             return true;
+        case 36:
+            *crc_extra = 222;
+            return true;
+        case 42:
+            *crc_extra = 28;
+            return true;
+        case 74:
+            *crc_extra = 20;
+            return true;
+        case 76:
+            *crc_extra = 152;
+            return true;
+        case 83:
+            *crc_extra = 22;
+            return true;
         case 84:
             *crc_extra = 143;
             return true;
         case 85:
             *crc_extra = 140;
+            return true;
+        case 87:
+            *crc_extra = 150;
+            return true;
+        case 141:
+            *crc_extra = 47;
+            return true;
+        case 147:
+            *crc_extra = 154;
+            return true;
+        case 230:
+            *crc_extra = 163;
+            return true;
+        case 241:
+            *crc_extra = 90;
+            return true;
+        case 242:
+            *crc_extra = 104;
+            return true;
+        case 245:
+            *crc_extra = 130;
+            return true;
+        case 290:
+            *crc_extra = 251;
+            return true;
+        case 291:
+            *crc_extra = 10;
+            return true;
+        case 380:
+            *crc_extra = 232;
+            return true;
+        case 410:
+            *crc_extra = 160;
+            return true;
+        case 411:
+            *crc_extra = 106;
+            return true;
+        case 436:
+            *crc_extra = 193;
+            return true;
+        case 441:
+            *crc_extra = 169;
+            return true;
+        case 514:
+            *crc_extra = 197;
+            return true;
+        case 12901:
+            *crc_extra = 254;
+            return true;
+        case 12904:
+            *crc_extra = 77;
             return true;
         default:
             return false;
@@ -252,6 +350,56 @@ bool mavlink_decode_globalPositionInt(const MAVLinkFrame_t *frame, MAVLinkGlobal
     position->vy           = read_i16_le(&frame->bytes[32]);
     position->vz           = read_i16_le(&frame->bytes[34]);
     position->hdg          = read_u16_le(&frame->bytes[36]);
+
+    return true;
+}
+
+bool mavlink_decode_servo_output_raw(const MAVLinkFrame_t *frame, MAVLinkServoOutputRaw_t *servo_output) {
+    uint8_t payload[37];
+
+    if (servo_output == NULL || !copy_zero_padded_payload(frame, 36, payload, sizeof(payload))) {
+        return false;
+    }
+
+    servo_output->time_usec   = read_u32_le(&payload[0]);
+    servo_output->servo1_raw  = read_u16_le(&payload[4]);
+    servo_output->servo2_raw  = read_u16_le(&payload[6]);
+    servo_output->servo3_raw  = read_u16_le(&payload[8]);
+    servo_output->servo4_raw  = read_u16_le(&payload[10]);
+    servo_output->servo5_raw  = read_u16_le(&payload[12]);
+    servo_output->servo6_raw  = read_u16_le(&payload[14]);
+    servo_output->servo7_raw  = read_u16_le(&payload[16]);
+    servo_output->servo8_raw  = read_u16_le(&payload[18]);
+    servo_output->port        = payload[20];
+    servo_output->servo9_raw  = read_u16_le(&payload[21]);
+    servo_output->servo10_raw = read_u16_le(&payload[23]);
+    servo_output->servo11_raw = read_u16_le(&payload[25]);
+    servo_output->servo12_raw = read_u16_le(&payload[27]);
+    servo_output->servo13_raw = read_u16_le(&payload[29]);
+    servo_output->servo14_raw = read_u16_le(&payload[31]);
+    servo_output->servo15_raw = read_u16_le(&payload[33]);
+    servo_output->servo16_raw = read_u16_le(&payload[35]);
+
+    return true;
+}
+
+bool mavlink_decode_attitude_target(const MAVLinkFrame_t *frame, MAVLinkAttitudeTarget_t *attitude_target) {
+    uint8_t payload[37];
+
+    if (attitude_target == NULL || !copy_zero_padded_payload(frame, 83, payload, sizeof(payload))) {
+        return false;
+    }
+
+    attitude_target->time_boot_ms    = read_u32_le(&payload[0]);
+    attitude_target->q[0]            = read_f32_le(&payload[4]);
+    attitude_target->q[1]            = read_f32_le(&payload[8]);
+    attitude_target->q[2]            = read_f32_le(&payload[12]);
+    attitude_target->q[3]            = read_f32_le(&payload[16]);
+    attitude_target->body_roll_rate  = read_f32_le(&payload[20]);
+    attitude_target->body_pitch_rate = read_f32_le(&payload[24]);
+    attitude_target->body_yaw_rate   = read_f32_le(&payload[28]);
+    attitude_target->thrust          = read_f32_le(&payload[32]);
+    attitude_target->type_mask       = payload[36];
 
     return true;
 }

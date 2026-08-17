@@ -114,6 +114,39 @@ typedef struct {
     uint16_t hdg;
 } MAVLinkGlobalPositionInt_t;
 
+/* SERVO_OUTPUT_RAW: message ID 36 */
+typedef struct {
+    uint32_t time_usec;
+    uint16_t servo1_raw;
+    uint16_t servo2_raw;
+    uint16_t servo3_raw;
+    uint16_t servo4_raw;
+    uint16_t servo5_raw;
+    uint16_t servo6_raw;
+    uint16_t servo7_raw;
+    uint16_t servo8_raw;
+    uint8_t port;
+    uint16_t servo9_raw;
+    uint16_t servo10_raw;
+    uint16_t servo11_raw;
+    uint16_t servo12_raw;
+    uint16_t servo13_raw;
+    uint16_t servo14_raw;
+    uint16_t servo15_raw;
+    uint16_t servo16_raw;
+} MAVLinkServoOutputRaw_t;
+
+/* ATTITUDE_TARGET: message ID 83 */
+typedef struct {
+    uint32_t time_boot_ms;
+    float q[4];
+    float body_roll_rate;
+    float body_pitch_rate;
+    float body_yaw_rate;
+    float thrust;
+    uint8_t type_mask;
+} MAVLinkAttitudeTarget_t;
+
 /* SET_POSITION_TARGET_LOCAL_NED: message ID 84 */
 typedef struct {
     uint32_t time_boot_ms;

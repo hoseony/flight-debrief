@@ -123,6 +123,54 @@ bool flight_data_add_global_position(FlightData_t *data, uint64_t timestamp_us, 
     return true;
 }
 
+bool flight_data_add_servo_output(FlightData_t *data, uint64_t timestamp_us, const MAVLinkServoOutputRaw_t *servo_output) {
+    if (data == NULL || servo_output == NULL) {
+        return false;
+    }
+
+    if (data->servo_output_count == data->servo_output_capacity) {
+        size_t new_capacity = data->servo_output_capacity == 0 ? 256 : data->servo_output_capacity * 2;
+        ServoOutputRawSample_t *new_samples = realloc(data->servo_outputs, new_capacity * sizeof(*new_samples));
+
+        if (new_samples == NULL) {
+            return false;
+        }
+
+        data->servo_outputs = new_samples;
+        data->servo_output_capacity = new_capacity;
+    }
+
+    ServoOutputRawSample_t *sample = &data->servo_outputs[data->servo_output_count];
+    sample->timestamp_us = timestamp_us;
+    sample->servo_output = *servo_output;
+    data->servo_output_count++;
+    return true;
+}
+
+bool flight_data_add_attitude_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkAttitudeTarget_t *attitude_target) {
+    if (data == NULL || attitude_target == NULL) {
+        return false;
+    }
+
+    if (data->attitude_target_count == data->attitude_target_capacity) {
+        size_t new_capacity = data->attitude_target_capacity == 0 ? 256 : data->attitude_target_capacity * 2;
+        AttitudeTargetSample_t *new_samples = realloc(data->attitude_targets, new_capacity * sizeof(*new_samples));
+
+        if (new_samples == NULL) {
+            return false;
+        }
+
+        data->attitude_targets = new_samples;
+        data->attitude_target_capacity = new_capacity;
+    }
+
+    AttitudeTargetSample_t *sample = &data->attitude_targets[data->attitude_target_count];
+    sample->timestamp_us = timestamp_us;
+    sample->attitude_target = *attitude_target;
+    data->attitude_target_count++;
+    return true;
+}
+
 bool flight_data_add_set_position_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkSetPositionTargetLocalNed_t *target) {
     if (data == NULL || target == NULL) {
         return false;
@@ -181,6 +229,8 @@ void flight_data_free(FlightData_t *data) {
     free(data->attitude_quaternions);
     free(data->local_positions);
     free(data->global_positions);
+    free(data->servo_outputs);
+    free(data->attitude_targets);
     free(data->set_position_targets);
     free(data->position_targets);
 

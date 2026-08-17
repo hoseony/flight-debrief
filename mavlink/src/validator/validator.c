@@ -58,6 +58,26 @@ bool validator_handle_frame(TLogRecord_t *tlog, FlightData_t *flight_data, uint3
             return flight_data_add_global_position(flight_data, tlog->timestamp_us, &position);
         }
 
+        case 36: {
+            MAVLinkServoOutputRaw_t servo_output;
+
+            if (!mavlink_decode_servo_output_raw(&tlog->frame, &servo_output)) {
+                return false;
+            }
+
+            return flight_data_add_servo_output(flight_data, tlog->timestamp_us, &servo_output);
+        }
+
+        case 83: {
+            MAVLinkAttitudeTarget_t attitude_target;
+
+            if (!mavlink_decode_attitude_target(&tlog->frame, &attitude_target)) {
+                return false;
+            }
+
+            return flight_data_add_attitude_target(flight_data, tlog->timestamp_us, &attitude_target);
+        }
+
         case 84: {
             MAVLinkSetPositionTargetLocalNed_t target;
 
@@ -94,6 +114,8 @@ void print_read_summary(FlightData_t *flight_data, size_t records_read, size_t v
         flight_data->attitude_quaternion_count +
         flight_data->local_position_count +
         flight_data->global_position_count +
+        flight_data->servo_output_count +
+        flight_data->attitude_target_count +
         flight_data->set_position_target_count +
         flight_data->position_target_count;
 
@@ -116,6 +138,8 @@ void print_read_summary(FlightData_t *flight_data, size_t records_read, size_t v
     printf("| %-28s | %10zu |\n", "Attitude quaternion (31)", flight_data->attitude_quaternion_count);
     printf("| %-28s | %10zu |\n", "Local position NED (32)", flight_data->local_position_count);
     printf("| %-28s | %10zu |\n", "Global position INT (33)", flight_data->global_position_count);
+    printf("| %-28s | %10zu |\n", "Servo output raw (36)", flight_data->servo_output_count);
+    printf("| %-28s | %10zu |\n", "Attitude target (83)", flight_data->attitude_target_count);
     printf("| %-28s | %10zu |\n", "Set position target (84)", flight_data->set_position_target_count);
     printf("| %-28s | %10zu |\n", "Position target (85)", flight_data->position_target_count);
     printf("+------------------------------+------------+\n");

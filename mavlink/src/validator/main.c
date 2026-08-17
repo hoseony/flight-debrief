@@ -22,6 +22,15 @@
 #include "../../include/tlog.h"
 #include "../../include/validator.h"
 
+typedef struct {
+    uint32_t msgid;
+    size_t count;
+} MessageCount_t;
+
+MessageCount_t unknown_messages[64] = {0};
+size_t unknown_message_count = 0;
+
+
 int main(int argc, char* argv[]) {
     int exit_status = 0;
 
@@ -72,6 +81,29 @@ int main(int argc, char* argv[]) {
         // get crc_extra
         if(!mavlink_crc_extra_for(msgid, &crc_extra)) {
             unknown_crc++;
+            
+            /* Figure out which one is unknown */
+
+            bool found = false;
+
+            for (size_t i = 0; i < unknown_message_count; i++) {
+
+                // if found the msg in the array, increment
+                if (unknown_messages[i].msgid == msgid) {
+                    unknown_messages[i].count++;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found && unknown_message_count < 64) {
+                unknown_messages[unknown_message_count].msgid = msgid;
+                unknown_messages[unknown_message_count].count = 1;
+                unknown_message_count++;
+            }
+
+
+
             continue;
         }
         
@@ -92,6 +124,18 @@ int main(int argc, char* argv[]) {
 
     }
     print_read_summary(&flight_data, records_read, valid_frames, invalid_crc, unknown_crc);
+
+    printf("\n--- Unknown message IDs ---\n");
+
+    for (size_t i = 0; i < unknown_message_count; i++) {
+        printf(
+            "msgid %-6u : %zu\n",
+            unknown_messages[i].msgid,
+            unknown_messages[i].count
+        );
+    }
+
+
     flight_data_free(&flight_data);
 
     /* close the file */

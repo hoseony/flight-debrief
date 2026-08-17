@@ -26,6 +26,8 @@ bool mavlink_decode_attitude(const MAVLinkFrame_t *frame, MAVLinkAttitude_t *att
 bool mavlink_decode_attitudeQuaternion(const MAVLinkFrame_t *frame, MAVLinkAttitudeQuaternion_t *attitude_quaternion);
 bool mavlink_decode_localPositionNed(const MAVLinkFrame_t *frame, MAVLinkLocalPositionNed_t *position);
 bool mavlink_decode_globalPositionInt(const MAVLinkFrame_t *frame, MAVLinkGlobalPositionInt_t *position);
+bool mavlink_decode_servo_output_raw(const MAVLinkFrame_t *frame, MAVLinkServoOutputRaw_t *servo_output);
+bool mavlink_decode_attitude_target(const MAVLinkFrame_t *frame, MAVLinkAttitudeTarget_t *attitude_target);
 bool mavlink_decode_setPositionTargetLocalNed(const MAVLinkFrame_t *frame, MAVLinkSetPositionTargetLocalNed_t *target);
 bool mavlink_decode_positionTargetLocalNed(const MAVLinkFrame_t *frame, MAVLinkPositionTargetLocalNed_t *target);
 

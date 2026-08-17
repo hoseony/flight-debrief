@@ -35,6 +35,16 @@ typedef struct {
 
 typedef struct {
     uint64_t timestamp_us;
+    MAVLinkServoOutputRaw_t servo_output;
+} ServoOutputRawSample_t;
+
+typedef struct {
+    uint64_t timestamp_us;
+    MAVLinkAttitudeTarget_t attitude_target;
+} AttitudeTargetSample_t;
+
+typedef struct {
+    uint64_t timestamp_us;
     MAVLinkSetPositionTargetLocalNed_t set_position_target;
 } SetPositionTargetLocalNedSample_t;
 
@@ -64,6 +74,14 @@ typedef struct {
     size_t global_position_count;
     size_t global_position_capacity;
 
+    ServoOutputRawSample_t *servo_outputs;
+    size_t servo_output_count;
+    size_t servo_output_capacity;
+
+    AttitudeTargetSample_t *attitude_targets;
+    size_t attitude_target_count;
+    size_t attitude_target_capacity;
+
     SetPositionTargetLocalNedSample_t *set_position_targets;
     size_t set_position_target_count;
     size_t set_position_target_capacity;
@@ -78,6 +96,8 @@ bool flight_data_add_attitude(FlightData_t *data, uint64_t timestamp_us, const M
 bool flight_data_add_attitude_quaternion(FlightData_t *data, uint64_t timestamp_us, const MAVLinkAttitudeQuaternion_t *attitude);
 bool flight_data_add_local_position(FlightData_t *data, uint64_t timestamp_us, const MAVLinkLocalPositionNed_t *position);
 bool flight_data_add_global_position(FlightData_t *data, uint64_t timestamp_us, const MAVLinkGlobalPositionInt_t *position);
+bool flight_data_add_servo_output(FlightData_t *data, uint64_t timestamp_us, const MAVLinkServoOutputRaw_t *servo_output);
+bool flight_data_add_attitude_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkAttitudeTarget_t *attitude_target);
 bool flight_data_add_set_position_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkSetPositionTargetLocalNed_t *target);
 bool flight_data_add_position_target(FlightData_t *data, uint64_t timestamp_us, const MAVLinkPositionTargetLocalNed_t *target);
 void flight_data_free(FlightData_t *data);

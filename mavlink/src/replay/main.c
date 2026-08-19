@@ -6,11 +6,12 @@
 
 #include "../../include/flight_data.h"
 #include "../../include/tlog.h"
-#include "../../include/validator.h"
+#include "../../include/replay.h"
 
 /*
  * make -C ../../ && ../../flight-replay ../../out/log_20260817_15_06_49/telemetry.tlog
  */
+
 
 int main(int argc, char* argv[]) {
     int exit_status = 0;
@@ -44,27 +45,59 @@ int main(int argc, char* argv[]) {
 
     /* ---------- replay! ---------- */
 
-    // for now, let's print local_position_ned
+    // check if initial timestamp exist
+    if (flight_data.local_position_count == 0) {
+        fprintf(stderr, "ERROR READING LOCAL_POSITION_COUNT: local_position_count = 0\n");
+        flight_data_free(&flight_data);
 
-    // uint64_t initial_timestamp = 0;
+        if (fclose(file) == EOF) {
+            perror("fclose");
+        }
 
-    uint64_t initial_timestamp = flight_data.local_positions[0].timestamp_us;
-
-    for (size_t i = 0; i < flight_data.local_position_count; i ++) {
-        uint64_t elapsed = flight_data.local_positions[i].timestamp_us - initial_timestamp;
-        double elapsed_seconds = elapsed / 1000000.0;
-
-        // prepare the data
-        double x = flight_data.local_positions[i].local_position.x;
-        double y = flight_data.local_positions[i].local_position.y;
-        double z = flight_data.local_positions[i].local_position.z;
-
-        printf("%8fs x=%8f y=%8f z=%8f\n", elapsed_seconds, x, y, z);
+        return 1;
     }
 
+    ReplayTrajectory_t trajectory = {0};
+    if (!replay_trajectory_from_flight_data(&flight_data, &trajectory)) {
+        return 1;
+    };
+
+    ReplayTrajectory_t resample = {0};
+    if (!replay_trajectory_resample(&trajectory, 100000, &resample)) {
+        return 1;
+    };
+
+    TrajectorySafetyLimit_t limits = {
+        .maximum_altitude = 3.0f,
+        .maximum_horizontal_distance = 0.5f,
+        .speed = 1.0f,
+        .total_duration_us = UINT64_C(25000000) 
+    };
+
+    if (!replay_trajectory_validate(&resample, &limits)) {
+        return 1;
+    }
+/*
+    TrajectorySafetyLimit_t limits_physical = {
+        .maximum_altitude = 1.5f,
+        .maximum_horizontal_distance = 1.0f,
+        .speed = 0.5f,
+        .total_duration_us = UINT64_C(15000000)
+    };
+*/
+
+    for (size_t i = 0; i < resample.count; i++) {
+        printf("%8.3" PRIu64 " us | x=%+.6f y=%+.6f z=%+.6f\n", 
+                resample.positions[i].elapsed_us, 
+                resample.positions[i].x, 
+                resample.positions[i].y, 
+                resample.positions[i].z);
+    }
 
     /* ---------- close ---------- */
     flight_data_free(&flight_data);
+    replay_trajectory_free(&trajectory);
+    replay_trajectory_free(&resample);
 
     /* close the file */
     if (fclose(file) == EOF) {

@@ -1,112 +1,11 @@
 #include <stdio.h>
-#include <stdbool.h>
 
-#include "../../include/tlog.h"
-#include "../../include/flight_data.h"
-#include "../../include/mavlink_types.h"
-#include "../../include/mavlink_decode.h"
+#include "../../include/validator.h"
 
-bool validator_handle_frame(TLogRecord_t *tlog, FlightData_t *flight_data, uint32_t msgid) {
-    switch(msgid) {
-        case 0: {
-            MAVLinkHeartbeat_t heartbeat;
-
-            if (!mavlink_decode_heartbeat(&tlog->frame, &heartbeat)) {
-                return false;
-            }
-
-            return flight_data_add_heartbeat(flight_data, tlog->timestamp_us, &heartbeat);
-        }
-
-        case 30: {
-            MAVLinkAttitude_t attitude;
-
-            if (!mavlink_decode_attitude(&tlog->frame, &attitude)) {
-                return false;
-            }
-
-            return flight_data_add_attitude(flight_data, tlog->timestamp_us, &attitude);
-        }
-
-        case 31: {
-            MAVLinkAttitudeQuaternion_t attitude;
-
-            if (!mavlink_decode_attitudeQuaternion(&tlog->frame, &attitude)) {
-                return false;
-            }
-
-            return flight_data_add_attitude_quaternion(flight_data, tlog->timestamp_us, &attitude);
-        }
-
-        case 32: {
-            MAVLinkLocalPositionNed_t position;
-
-            if (!mavlink_decode_localPositionNed(&tlog->frame, &position)) {
-                return false;
-            }
-
-            return flight_data_add_local_position(flight_data, tlog->timestamp_us, &position);
-        }
-
-        case 33: {
-            MAVLinkGlobalPositionInt_t position;
-
-            if (!mavlink_decode_globalPositionInt(&tlog->frame, &position)) {
-                return false;
-            }
-
-            return flight_data_add_global_position(flight_data, tlog->timestamp_us, &position);
-        }
-
-        case 36: {
-            MAVLinkServoOutputRaw_t servo_output;
-
-            if (!mavlink_decode_servo_output_raw(&tlog->frame, &servo_output)) {
-                return false;
-            }
-
-            return flight_data_add_servo_output(flight_data, tlog->timestamp_us, &servo_output);
-        }
-
-        case 83: {
-            MAVLinkAttitudeTarget_t attitude_target;
-
-            if (!mavlink_decode_attitude_target(&tlog->frame, &attitude_target)) {
-                return false;
-            }
-
-            return flight_data_add_attitude_target(flight_data, tlog->timestamp_us, &attitude_target);
-        }
-
-        case 84: {
-            MAVLinkSetPositionTargetLocalNed_t target;
-
-            if (!mavlink_decode_setPositionTargetLocalNed(&tlog->frame, &target)) {
-                return false;
-            }
-
-            return flight_data_add_set_position_target(flight_data, tlog->timestamp_us, &target);
-        }
-
-        case 85: {
-            MAVLinkPositionTargetLocalNed_t target;
-
-            if (!mavlink_decode_positionTargetLocalNed(&tlog->frame, &target)) {
-                return false;
-            }
-
-            return flight_data_add_position_target(flight_data, tlog->timestamp_us, &target);
-        }
-
-        default:
-            return true;
+void print_read_summary(const FlightData_t *flight_data, const TLogLoadStats_t *stats) {
+    if (flight_data == NULL || stats == NULL) {
+        return;
     }
-    
-    return true;
-}
-
-
-void print_read_summary(FlightData_t *flight_data, size_t records_read, size_t valid_frames, size_t invalid_crc, size_t unknown_crc) {
 
     size_t decoded_total =
         flight_data->heartbeat_count +
@@ -123,10 +22,11 @@ void print_read_summary(FlightData_t *flight_data, size_t records_read, size_t v
     printf("+------------------------------+------------+\n");
     printf("| %-28s | %10s |\n", "Validation summary", "Count");
     printf("+------------------------------+------------+\n");
-    printf("| %-28s | %10zu |\n", "Records read", records_read);
-    printf("| %-28s | %10zu |\n", "Valid frames", valid_frames);
-    printf("| %-28s | %10zu |\n", "Invalid CRC", invalid_crc);
-    printf("| %-28s | %10zu |\n", "Unknown CRC", unknown_crc);
+    printf("| %-28s | %10zu |\n", "Records read", stats->records_read);
+    printf("| %-28s | %10zu |\n", "Valid frames", stats->valid_frames);
+    printf("| %-28s | %10zu |\n", "Invalid CRC", stats->invalid_crc);
+    printf("| %-28s | %10zu |\n", "Unknown CRC", stats->unknown_crc);
+    printf("| %-28s | %10zu |\n", "Decode failures", stats->decode_failures);
     printf("+------------------------------+------------+\n");
 
     printf("\n");
@@ -145,4 +45,12 @@ void print_read_summary(FlightData_t *flight_data, size_t records_read, size_t v
     printf("+------------------------------+------------+\n");
     printf("| %-28s | %10zu |\n", "Total", decoded_total);
     printf("+------------------------------+------------+\n");
+
+    if (stats->unknown_message_count > 0) {
+        printf("\n--- Unknown message IDs ---\n");
+
+        for (size_t i = 0; i < stats->unknown_message_count; i++) {
+            printf("msgid %-6u : %zu\n", stats->unknown_messages[i].msgid, stats->unknown_messages[i].count);
+        }
+    }
 }

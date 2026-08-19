@@ -12,23 +12,10 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <stdbool.h>
 
-#include "../../include/mavlink_types.h"
-#include "../../include/mavlink_decode.h"
 #include "../../include/flight_data.h"
 #include "../../include/tlog.h"
 #include "../../include/validator.h"
-
-typedef struct {
-    uint32_t msgid;
-    size_t count;
-} MessageCount_t;
-
-MessageCount_t unknown_messages[64] = {0};
-size_t unknown_message_count = 0;
 
 
 int main(int argc, char* argv[]) {
@@ -47,94 +34,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    /* ---------- main validator loop ---------- */
     FlightData_t flight_data = {0};
+    TLogLoadStats_t stats = {0};
+
     printf("READING %s\n", argv[1]);
 
-    size_t records_read = 0;
-    size_t valid_frames = 0;
-    size_t invalid_crc = 0;
-    size_t unknown_crc = 0;
-
-    while (true) {
-
-        /* ---------- read timestamp and MAVLink frame ---------- */
-        TLogRecord_t tlog = {0};
-        TLogReadResult_t read_result = tlog_read(file, &tlog);
-
-        if (read_result == TLOG_READ_EOF) {
-            break;
-        }
-
-        if (read_result == TLOG_READ_ERROR) {
-            fprintf(stderr, "failed to read tlog...\n");
-            exit_status = 1;
-            break;
-        }
-
-        records_read++; 
-
-        /* ---------- crc validation here ----------*/
-        uint32_t msgid = frame_msgid(&tlog.frame);
-        uint8_t crc_extra; 
-
-        // get crc_extra
-        if(!mavlink_crc_extra_for(msgid, &crc_extra)) {
-            unknown_crc++;
-            
-            /* Figure out which one is unknown */
-
-            bool found = false;
-
-            for (size_t i = 0; i < unknown_message_count; i++) {
-
-                // if found the msg in the array, increment
-                if (unknown_messages[i].msgid == msgid) {
-                    unknown_messages[i].count++;
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found && unknown_message_count < 64) {
-                unknown_messages[unknown_message_count].msgid = msgid;
-                unknown_messages[unknown_message_count].count = 1;
-                unknown_message_count++;
-            }
-
-
-
-            continue;
-        }
-        
-        // validate crc
-        // msg with unknown crcs will get skipped here
-        if (!mavlink_frame_crc_valid(&tlog.frame, crc_extra)) {
-            fprintf(stderr, "invalid crc for message %u\n", msgid);
-            invalid_crc++;
-            continue;
-        }
-
-        valid_frames++;
-
-        /* ---------- decoding / storing ----------*/
-        if (!validator_handle_frame(&tlog, &flight_data, msgid)) {
-            fprintf(stderr, "failed to decode or store message %u\n", msgid);
-        }
-
-    }
-    print_read_summary(&flight_data, records_read, valid_frames, invalid_crc, unknown_crc);
-
-    printf("\n--- Unknown message IDs ---\n");
-
-    for (size_t i = 0; i < unknown_message_count; i++) {
-        printf(
-            "msgid %-6u : %zu\n",
-            unknown_messages[i].msgid,
-            unknown_messages[i].count
-        );
+    if (!tlog_load_flight_data(file, &flight_data, &stats)) {
+        fprintf(stderr, "failed to load tlog\n");
+        exit_status = 1;
     }
 
+    print_read_summary(&flight_data, &stats);
 
     flight_data_free(&flight_data);
 

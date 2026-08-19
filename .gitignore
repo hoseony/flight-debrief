@@ -3,4 +3,5 @@
 /mavlink/out/
 /mavlink/flight-debrief
 /mavlink/tlog-validator
+/mavlink/flight-replay
 /mavlink/src/validator/a.out

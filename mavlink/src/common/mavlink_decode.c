@@ -197,6 +197,9 @@ bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra) {
         case 76:
             *crc_extra = 152;
             return true;
+        case 77:
+            *crc_extra = 143;
+            return true;
         case 83:
             *crc_extra = 22;
             return true;
@@ -281,6 +284,17 @@ bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t *h
     heartbeat->base_mode       = frame->bytes[16];
     heartbeat->system_status   = frame->bytes[17];
     heartbeat->mavlink_version = frame->bytes[18];
+
+    return true;
+}
+
+bool mavlink_decode_command_ack(const MAVLinkFrame_t *frame, MAVLinkCommandAck_t *ack) {
+    if (ack == NULL || !frame_matches(frame, 77, 3)) {
+        return false;
+    }
+
+    ack->command = read_u16_le(&frame->bytes[10]);
+    ack->result = frame->bytes[12];
 
     return true;
 }

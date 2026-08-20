@@ -67,6 +67,12 @@ typedef struct {
     uint8_t mavlink_version;
 } MAVLinkHeartbeat_t;
 
+/* COMMAND_ACK: message ID 77 */
+typedef struct {
+    uint16_t command;
+    uint8_t result;
+} MAVLinkCommandAck_t;
+
 /* ATTITUDE: message ID 30 */
 typedef struct {
     uint32_t time_boot_ms;

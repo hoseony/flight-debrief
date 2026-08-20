@@ -22,6 +22,7 @@ bool mavlink_crc_extra_for(uint32_t message_id, uint8_t *crc_extra);
 
 /* MAVLink Decoder */
 bool mavlink_decode_heartbeat(const MAVLinkFrame_t *frame, MAVLinkHeartbeat_t *heartbeat);
+bool mavlink_decode_command_ack(const MAVLinkFrame_t *frame, MAVLinkCommandAck_t *ack);
 bool mavlink_decode_attitude(const MAVLinkFrame_t *frame, MAVLinkAttitude_t *attitude);
 bool mavlink_decode_attitudeQuaternion(const MAVLinkFrame_t *frame, MAVLinkAttitudeQuaternion_t *attitude_quaternion);
 bool mavlink_decode_localPositionNed(const MAVLinkFrame_t *frame, MAVLinkLocalPositionNed_t *position);

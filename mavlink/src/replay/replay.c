@@ -130,6 +130,7 @@ bool replay_trajectory_validate(const ReplayTrajectory_t *trajectory, Trajectory
     }
 
     if (trajectory->positions[trajectory->count - 1].elapsed_us >= limits->total_duration_us) {
+        fprintf(stderr, "trajectory rejected: duration exceeds limit\n");
         return false;
     }
 

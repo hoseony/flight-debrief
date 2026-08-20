@@ -28,7 +28,6 @@ typedef struct {
 bool replay_trajectory_from_flight_data(const FlightData_t *flight_data, ReplayTrajectory_t *trajectory);
 void replay_trajectory_free(ReplayTrajectory_t *trajectory);
 bool replay_trajectory_resample(const ReplayTrajectory_t *trajectory, uint64_t interval_us, ReplayTrajectory_t *output);
-
 bool replay_trajectory_validate(const ReplayTrajectory_t *trajectory, TrajectorySafetyLimit_t *limits);
 
 #endif

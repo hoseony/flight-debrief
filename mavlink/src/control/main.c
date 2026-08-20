@@ -11,41 +11,94 @@
 #include "../../include/mavlink_parser.h"
 #include "../../include/udp_port.h"
 #include "../../include/mavlink_encoder.h"
+#include "../../include/flight_data.h"
+#include "../..//include/tlog.h"
+#include "../../include/replay.h"
 
+/* ---------- function prototype ---------- */
+bool send_fixed_position_setpoint( int fd, const struct sockaddr_in *px4_address, socklen_t px4_address_length, uint8_t source_system, uint8_t source_component, uint8_t target_system, uint8_t target_component);
+static uint64_t monotonic_time_ms(void);
+
+/* ---------- FSM (states) ---------- */
+// FSM approach makes it a bit cleaner (believe or not...)
 typedef enum {
     CONTROL_WAIT_HEARTBEAT,
     CONTROL_PRESTREAM_SETPOINT,
     CONTROL_WAIT_OFFBOARD_ACK,
     CONTROL_WAIT_ARM_ACK,
     CONTROL_HOLD_POSITION,
+    CONTROL_REPLAY_TRAJECTORY,
+    CONTROL_LAND,
     CONTROL_ERROR
 } ControlState_t;
 
-static bool send_fixed_position_setpoint( int fd, const struct sockaddr_in *px4_address, socklen_t px4_address_length, uint8_t source_system, uint8_t source_component, uint8_t target_system, uint8_t target_component) {
-    MAVLinkEncodedFrame_t command;
+/* ---------- main function ---------- */
+int main(int argc, char **argv) {
+    // this part is basically integration of replay to the state machine that is in this file 
+    // The code is indeed getting messy, but for now, bare with me...
 
-    if (!mavlink_encode_position_target_local_ned(
-            &command, source_system, source_component,
-            target_system, target_component,
-            0,
-            0.0f, 0.0f,-1.0f)) {
-        return false;
+    /* ---------- open the file ---------- */
+    if (argc != 2) {
+        fprintf(stderr, "usage: %s <telemetry.tlog>\n", argv[0]);
+        return 1;
     }
 
-    ssize_t sent = sendto(
-        fd,
-        command.bytes,
-        command.length,
-        0,
-        (const struct sockaddr *)px4_address,
-        px4_address_length
-    );
+    FILE *file = fopen(argv[1], "rb");
 
-    return (sent == (ssize_t)command.length);
-}
+    if (file == NULL) {
+        fprintf(stderr, "cannot open %s: %s\n", argv[1], strerror(errno));
+        return 1;
+    }
 
-int main(void) {
-    /* open the port */
+    /* ---------- load flight data ---------- */
+    FlightData_t flight_data = {0};
+    TLogLoadStats_t stats = {0};
+
+    printf("READING %s\n", argv[1]);
+
+    if (!tlog_load_flight_data(file, &flight_data, &stats)) {
+        fprintf(stderr, "failed to load tlog\n");
+        return 1;
+    }
+
+    /* ---------- convert it to trajectory ---------- */
+    // check if initial timestamp exist
+    if (flight_data.local_position_count == 0) {
+        fprintf(stderr, "ERROR READING LOCAL_POSITION_COUNT: local_position_count = 0\n");
+        flight_data_free(&flight_data);
+
+        if (fclose(file) == EOF) {
+            perror("fclose");
+        }
+
+        return 1;
+    }
+
+    ReplayTrajectory_t trajectory = {0};
+    if (!replay_trajectory_from_flight_data(&flight_data, &trajectory)) {
+        return 1;
+    };
+
+    ReplayTrajectory_t resample = {0};
+    if (!replay_trajectory_resample(&trajectory, 100000, &resample)) {
+        return 1;
+    };
+
+    // safety check!
+    TrajectorySafetyLimit_t limits = {
+        .maximum_altitude = 3.0f,
+        .maximum_horizontal_distance = 0.5f,
+        .speed = 1.0f,
+        .total_duration_us = UINT64_C(25000000) 
+    };
+    
+    if (!replay_trajectory_validate(&resample, &limits)) {
+        return 1;
+    }
+
+    printf("Trajectory ready: %zu samples\n", resample.count);
+
+    /* ---------- open port ---------- */
     int fd = udp_port_open(14550);
 
     if (fd < 0) {
@@ -59,9 +112,11 @@ int main(void) {
         .tv_nsec = 100000000L
     };
 
+
+    /* ---------- FSM starts here ---------- */
     ControlState_t state = CONTROL_WAIT_HEARTBEAT;
 
-    // for state CONTROL_WAIT_HEARTBEAT
+    /* state: CONTROL_WAIT_HEARTBEAT */
     uint8_t buffer[2048];
     MAVLinkParser_t parser;
     MAVLinkFrame_t frame;
@@ -73,13 +128,29 @@ int main(void) {
     uint8_t target_component = 0;
     bool px4_found = false;
 
-    // for state CONTROL_PRESTREAM_SETPOINT
+    /* state: CONTROL_PRESTREAM_SETPOINT */
     size_t setpoint_count = 0;
     
     // ID from this program
     const uint8_t source_system = 255;
     const uint8_t source_component = 190;
 
+    /* state: CONTROL_REPLAY_TRAJECTORY */
+    size_t replay_index = 0;
+
+    /* command retry */
+    const uint64_t command_retry_interval_ms = 500;
+    const size_t command_max_attempts = 5;
+    uint64_t offboard_last_send_ms = 0;
+    uint64_t arm_last_send_ms = 0;
+    size_t offboard_attempts = 0;
+    size_t arm_attempts = 0;
+
+
+    // sorry for a massive long lines of code, 
+    // if I have some time, I will fix this to make it easier to read
+    // but for now, it does work.... so..
+    printf("Waiting for PX4 heartbeat...\n");
 
     while(true) {
         nanosleep(&interval, NULL);
@@ -141,6 +212,7 @@ int main(void) {
 
                 // we found it!
                 if (px4_found) {
+                    printf("Prestreaming 20 setpoints at 10 Hz...\n");
                     state = CONTROL_PRESTREAM_SETPOINT;
                 }
 
@@ -161,7 +233,8 @@ int main(void) {
                 setpoint_count++;
 
                 // after the prestreaming, send offboard_signal
-                if (setpoint_count >= 10) {
+                if (setpoint_count >= 20) {
+                    printf("Prestream complete: %zu setpoints sent\n", setpoint_count);
 
                     MAVLinkEncodedFrame_t offboard_command;
 
@@ -190,6 +263,9 @@ int main(void) {
                     }
                     
                     printf("Offboard command sent\n");
+                    offboard_attempts = 1;
+                    offboard_last_send_ms = monotonic_time_ms();
+                    printf("Waiting for Offboard ACK...\n");
                     state = CONTROL_WAIT_OFFBOARD_ACK;
                 }
 
@@ -255,6 +331,12 @@ int main(void) {
                         }
 
                         // this case is when its ack for different command
+                        printf(
+                            "COMMAND_ACK received: command=%u result=%u\n",
+                            ack.command,
+                            ack.result
+                        );
+
                         if (ack.command != 176) {
                             continue;
                         }
@@ -264,23 +346,68 @@ int main(void) {
                             // send arm command
                             MAVLinkEncodedFrame_t arm_command;
 
-                            mavlink_encode_arm(&arm_command, source_system, source_component,
-                                    target_system, target_component);
+                            if (!mavlink_encode_arm(&arm_command,
+                                        source_system, source_component,
+                                        target_system, target_component)) {
+                                fprintf(stderr, "failed to encode Arm command\n");
+                                state = CONTROL_ERROR;
+                                break;
+                            }
 
                             ssize_t result = sendto(fd, arm_command.bytes, arm_command.length,
                                     0, (const struct sockaddr *)&px4_address, px4_address_length);
-                            if (result < 0) {
+                            if (result != (ssize_t)arm_command.length) {
                                 perror("arm command sent fail");
                                 state = CONTROL_ERROR;
                                 break;
                             }
 
+                            arm_attempts = 1;
+                            arm_last_send_ms = monotonic_time_ms();
+                            printf("Arm command sent\n");
+                            printf("Waiting for Arm ACK...\n");
                             state = CONTROL_WAIT_ARM_ACK;
                         } else {
                             fprintf(stderr, "Offboard rejected: result=%u\n", ack.result);
                             state = CONTROL_ERROR;
                         }
                     }
+                }
+
+                if (state == CONTROL_WAIT_OFFBOARD_ACK
+                        && monotonic_time_ms() - offboard_last_send_ms
+                            >= command_retry_interval_ms) {
+                    if (offboard_attempts >= command_max_attempts) {
+                        fprintf(stderr, "Offboard ACK timeout after %zu attempts\n",
+                                offboard_attempts);
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    MAVLinkEncodedFrame_t offboard_command;
+
+                    if (!mavlink_encode_set_offboard_mode(&offboard_command,
+                                source_system, source_component,
+                                target_system, target_component)) {
+                        fprintf(stderr, "failed to encode Offboard command retry\n");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    ssize_t sent = sendto(fd, offboard_command.bytes,
+                            offboard_command.length, 0,
+                            (const struct sockaddr *)&px4_address, px4_address_length);
+
+                    if (sent != (ssize_t)offboard_command.length) {
+                        perror("sendto Offboard command retry");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    offboard_attempts++;
+                    offboard_last_send_ms = monotonic_time_ms();
+                    printf("Offboard command retry %zu/%zu\n",
+                            offboard_attempts, command_max_attempts);
                 }
 
                 break;
@@ -340,6 +467,12 @@ int main(void) {
                             continue;
                         }
 
+                        printf(
+                            "COMMAND_ACK received: command=%u result=%u\n",
+                            ack.command,
+                            ack.result
+                        );
+
                         // this case is when its ack for different command
                         if (ack.command != 400) {
                             continue;
@@ -347,7 +480,10 @@ int main(void) {
 
                         if (ack.result == 0) {
                             printf("Arm accepted\n");
-                            state = CONTROL_HOLD_POSITION;
+                            // state = CONTROL_HOLD_POSITION;
+                            printf("Replay starting: %zu samples at 10 Hz\n",
+                                    resample.count);
+                            state = CONTROL_REPLAY_TRAJECTORY;
                         } else {
                             fprintf(stderr, "arm rejected: result=%u\n", ack.result);
                             state = CONTROL_ERROR;
@@ -355,18 +491,108 @@ int main(void) {
                     }
                 }
 
+                if (state == CONTROL_WAIT_ARM_ACK
+                        && monotonic_time_ms() - arm_last_send_ms
+                            >= command_retry_interval_ms) {
+                    if (arm_attempts >= command_max_attempts) {
+                        fprintf(stderr, "Arm ACK timeout after %zu attempts\n",
+                                arm_attempts);
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    MAVLinkEncodedFrame_t arm_command;
+
+                    if (!mavlink_encode_arm(&arm_command,
+                                source_system, source_component,
+                                target_system, target_component)) {
+                        fprintf(stderr, "failed to encode Arm command retry\n");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    ssize_t sent = sendto(fd, arm_command.bytes,
+                            arm_command.length, 0,
+                            (const struct sockaddr *)&px4_address, px4_address_length);
+
+                    if (sent != (ssize_t)arm_command.length) {
+                        perror("sendto Arm command retry");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    arm_attempts++;
+                    arm_last_send_ms = monotonic_time_ms();
+                    printf("Arm command retry %zu/%zu\n",
+                            arm_attempts, command_max_attempts);
+                }
+
                 break;
             }
 
             case CONTROL_HOLD_POSITION: {
-               if (!send_fixed_position_setpoint(
-                        fd, &px4_address, px4_address_length,
-                        source_system, source_component,
-                        target_system, target_component)) {
+                MAVLinkEncodedFrame_t command;
+
+                if (!mavlink_encode_position_target_local_ned(&command, source_system, source_component, 
+                            target_system, target_component, 0, 0.0f, 0.0f,-1.0f)) {
                     state = CONTROL_ERROR;
                     break;
                 }
 
+                ssize_t sent = sendto( fd, command.bytes, command.length, 0,
+                        (const struct sockaddr *)&px4_address, px4_address_length);
+
+                if (!(sent == (ssize_t)command.length)) {
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                break;
+            }
+            
+            case CONTROL_REPLAY_TRAJECTORY: {
+                
+                if (replay_index >= resample.count) {
+                    printf("Replay complete: %zu samples sent\n", resample.count);
+                    state = CONTROL_HOLD_POSITION;
+                    break;
+                }
+
+                ReplayPosition_t *position = &resample.positions[replay_index];
+                MAVLinkEncodedFrame_t command;
+
+                if (!mavlink_encode_position_target_local_ned(&command, source_system, source_component, 
+                            target_system, target_component, 0, position->x, position->y,position->z)) {
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                ssize_t sent = sendto( fd, command.bytes, command.length, 0,
+                        (const struct sockaddr *)&px4_address, px4_address_length);
+
+                if (!(sent == (ssize_t)command.length)) {
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                if (replay_index % 10 == 0
+                        || replay_index + 1 == resample.count) {
+                    printf(
+                        "Replay %zu/%zu t=%.1fs target=(%+.3f, %+.3f, %+.3f)\n",
+                        replay_index + 1,
+                        resample.count,
+                        (double)position->elapsed_us / 1000000.0,
+                        position->x,
+                        position->y,
+                        position->z
+                    );
+                }
+
+                replay_index++;
+                break;
+            }
+
+            case CONTROL_LAND: {
                 break;
             }
 
@@ -375,5 +601,31 @@ int main(void) {
         }
     }
 
+
+    flight_data_free(&flight_data);
+    replay_trajectory_free(&trajectory);
+    replay_trajectory_free(&resample);
+
     return 0;
+}
+
+static uint64_t monotonic_time_ms(void) {
+    struct timespec now = {0};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    return (uint64_t)now.tv_sec * UINT64_C(1000)
+        + (uint64_t)now.tv_nsec / UINT64_C(1000000);
+}
+
+bool send_fixed_position_setpoint( int fd, const struct sockaddr_in *px4_address, socklen_t px4_address_length, uint8_t source_system, uint8_t source_component, uint8_t target_system, uint8_t target_component) {
+    MAVLinkEncodedFrame_t command;
+
+    if (!mavlink_encode_position_target_local_ned(&command, source_system, source_component, target_system, target_component, 0, 0.0f, 0.0f,-1.0f)) {
+        return false;
+    }
+
+    ssize_t sent = sendto( fd, command.bytes, command.length, 0,
+            (const struct sockaddr *)px4_address, px4_address_length);
+
+    return (sent == (ssize_t)command.length);
 }

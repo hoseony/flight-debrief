@@ -62,7 +62,10 @@ $(VALIDATOR_TARGET): $(COMMON_OBJECTS) $(VALIDATOR_OBJECTS)
 $(REPLAY_TARGET): $(COMMON_OBJECTS) $(REPLAY_OBJECTS)
 	$(CC) $^ -o $@
 
-$(CONTROL_TARGET): $(COMMON_OBJECTS) $(BUILD_DIR)/src/recorder/udp_port.o $(CONTROL_OBJECTS)
+$(CONTROL_TARGET): $(COMMON_OBJECTS) \
+	$(BUILD_DIR)/src/replay/replay.o \
+	$(BUILD_DIR)/src/recorder/udp_port.o \
+	$(CONTROL_OBJECTS)
 	$(CC) $^ -o $@
 
 $(BUILD_DIR)/src/control/mavlink_encoder.o: CPPFLAGS += -isystem $(MAVLINK_GENERATED_DIR)

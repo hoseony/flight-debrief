@@ -42,6 +42,7 @@
 #include "../../include/flight_data.h"
 #include "../..//include/tlog.h"
 #include "../../include/replay.h"
+#include "../../include/px4_messages.h"
 
 #define COLOR_RED "\033[31m"
 #define COLOR_GREEN "\033[32m"
@@ -60,7 +61,6 @@ static bool send_position_setpoint(
         uint8_t source_system, uint8_t source_component,
         uint8_t target_system, uint8_t target_component,
         float x, float y, float z);
-static bool drain_udp_datagrams(int fd);
 
 /* ---------- FSM (states) ---------- */
 // FSM approach makes it a bit cleaner (believe or not...)
@@ -181,6 +181,7 @@ int main(int argc, char **argv) {
     const uint64_t command_retry_interval_ms = 500;
     const size_t command_max_attempts = 5;
     const uint64_t disarm_wait_timeout_ms = 30000;
+    const uint64_t heartbeat_timeout_ms = 3000;
     uint64_t offboard_last_send_ms = 0;
     uint64_t arm_last_send_ms = 0;
     uint64_t land_last_send_ms = 0;
@@ -188,6 +189,7 @@ int main(int argc, char **argv) {
     size_t offboard_attempts = 0;
     size_t arm_attempts = 0;
     size_t land_attempts = 0;
+    uint64_t last_heartbeat_ms = 0;
 
 
     /* command last pos */
@@ -264,19 +266,33 @@ int main(int argc, char **argv) {
         // condition that checks if it needs to send setpoint signal
         bool setpoint_due = (state != CONTROL_WAIT_HEARTBEAT) && (now_ms >= next_setpoint_ms);
 
-        // for the states that actually uses incoming packets,
-        // that is those that are waiting the signals from the drone
-        if (socket_ready
-                && (state != CONTROL_WAIT_HEARTBEAT)
-                && (state != CONTROL_WAIT_OFFBOARD_ACK)
-                && (state != CONTROL_WAIT_ARM_ACK)
-                && (state != CONTROL_WAIT_LAND_ACK)
-                && (state != CONTROL_WAIT_DISARMED)) {
-            // drain the udp
-            if (!drain_udp_datagrams(fd)) {
+        PX4ReceivedMessages_t received_messages = {0};
+
+        if (socket_ready && state != CONTROL_WAIT_HEARTBEAT) {
+            if (!receive_px4_messages(
+                        fd, &px4_address, &parser, &received_messages)) {
                 state = CONTROL_ERROR;
                 break;
             }
+        }
+
+        if (received_messages.heartbeat_received) {
+            last_heartbeat_ms = now_ms;
+        }
+
+        if (received_messages.command_ack_received) {
+            printf(LOG_ACK " command=%u result=%u\n",
+                    received_messages.command_ack.command,
+                    received_messages.command_ack.result);
+        }
+
+        if (px4_found
+                && state != CONTROL_WAIT_HEARTBEAT
+                && now_ms - last_heartbeat_ms >= heartbeat_timeout_ms) {
+            fprintf(stderr, LOG_ERROR " PX4 connection lost: no heartbeat for %llums\n",
+                    (unsigned long long)heartbeat_timeout_ms);
+            state = CONTROL_ERROR;
+            break;
         }
 
         switch(state) {
@@ -324,6 +340,7 @@ int main(int argc, char **argv) {
                     target_system = frame.bytes[5];
                     target_component = frame.bytes[6];
                     px4_found = true;
+                    last_heartbeat_ms = monotonic_time_ms();
 
                     char address[INET_ADDRSTRLEN];
 
@@ -421,95 +438,41 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                while (socket_ready && state == CONTROL_WAIT_OFFBOARD_ACK) {
-                    struct sockaddr_in sender = {0};
-                    socklen_t sender_length = sizeof(sender);
+                if (received_messages.command_ack_received
+                        && received_messages.command_ack.command == 176) {
+                    MAVLinkCommandAck_t *ack = &received_messages.command_ack;
 
-                    ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
-                            (struct sockaddr *)&sender, &sender_length);
+                    if (ack->result == 0) {
+                        printf(LOG_STATE " Offboard mode accepted\n");
 
-                    if (received < 0) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        MAVLinkEncodedFrame_t arm_command;
+
+                        if (!mavlink_encode_arm(&arm_command,
+                                    source_system, source_component,
+                                    target_system, target_component)) {
+                            fprintf(stderr, LOG_ERROR " Failed to encode Arm command\n");
+                            state = CONTROL_ERROR;
                             break;
                         }
 
-                        perror(LOG_ERROR " Failed to receive UDP datagram");
-                        state = CONTROL_ERROR;
-                        break;
-                    }
-
-                    // check if it is from px4
-                    if (!(sender.sin_addr.s_addr == px4_address.sin_addr.s_addr
-                                && sender.sin_port == px4_address.sin_port)) {
-                        continue;
-                    }
-
-                    /* parse until find COMMAND_ACK */
-                    for (ssize_t i = 0; i < received; i++) {
-                        if (!mavlink_parser_consume(&parser, buffer[i], &frame)) {
-                            continue;
-                        }
-
-                        if (frame_msgid(&frame) != 77) {
-                            continue;
-                        }
-
-                        uint8_t crc_extra;
-                        if (!mavlink_crc_extra_for(77, &crc_extra)
-                                || !mavlink_frame_crc_valid(&frame, crc_extra)) {
-                            continue;
-                        }
-
-                        MAVLinkCommandAck_t ack;
-
-                        if (!mavlink_decode_command_ack(&frame, &ack)) {
-                            continue;
-                        }
-
-                        // this case is when its ack for different command
-                        printf(
-                            LOG_ACK " command=%u result=%u\n",
-                            ack.command,
-                            ack.result
-                        );
-
-                        if (ack.command != 176) {
-                            continue;
-                        }
-
-                        if (ack.result == 0) {
-                            printf(LOG_STATE " Offboard mode accepted\n");
-                            
-                            // send arm command
-                            MAVLinkEncodedFrame_t arm_command;
-
-                            if (!mavlink_encode_arm(&arm_command,
-                                        source_system, source_component,
-                                        target_system, target_component)) {
-                                fprintf(stderr, LOG_ERROR " Failed to encode Arm command\n");
-                                state = CONTROL_ERROR;
-                                break;
-                            }
-
-                            ssize_t result = sendto(fd, arm_command.bytes, arm_command.length,
-                                    0, (const struct sockaddr *)&px4_address, px4_address_length);
-                            if (result != (ssize_t)arm_command.length) {
-                                perror(LOG_ERROR " Failed to send Arm command");
-                                state = CONTROL_ERROR;
-                                break;
-                            }
-
-                            arm_attempts = 1;
-                            arm_last_send_ms = monotonic_time_ms();
-                            printf(LOG_STATE " Vehicle arm requested: attempt=1/%zu\n",
-                                    command_max_attempts);
-                            printf(LOG_STATE " Waiting for Arm acknowledgement\n");
-                            state = CONTROL_WAIT_ARM_ACK;
-                        } else {
-                            fprintf(stderr, LOG_ERROR " Offboard mode rejected: result=%u\n",
-                                    ack.result);
+                        ssize_t result = sendto(fd, arm_command.bytes, arm_command.length,
+                                0, (const struct sockaddr *)&px4_address, px4_address_length);
+                        if (result != (ssize_t)arm_command.length) {
+                            perror(LOG_ERROR " Failed to send Arm command");
                             state = CONTROL_ERROR;
+                            break;
                         }
+
+                        arm_attempts = 1;
+                        arm_last_send_ms = monotonic_time_ms();
+                        printf(LOG_STATE " Vehicle arm requested: attempt=1/%zu\n",
+                                command_max_attempts);
+                        printf(LOG_STATE " Waiting for Arm acknowledgement\n");
+                        state = CONTROL_WAIT_ARM_ACK;
+                    } else {
+                        fprintf(stderr, LOG_ERROR " Offboard mode rejected: result=%u\n",
+                                ack->result);
+                        state = CONTROL_ERROR;
                     }
                 }
 
@@ -562,73 +525,19 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                while (socket_ready && state == CONTROL_WAIT_ARM_ACK) {
-                    struct sockaddr_in sender = {0};
-                    socklen_t sender_length = sizeof(sender);
+                if (received_messages.command_ack_received
+                        && received_messages.command_ack.command == 400) {
+                    MAVLinkCommandAck_t *ack = &received_messages.command_ack;
 
-                    ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
-                            (struct sockaddr *)&sender, &sender_length);
-
-                    if (received < 0) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                            break;
-                        }
-
-                        perror(LOG_ERROR " Failed to receive UDP datagram");
+                    if (ack->result == 0) {
+                        printf(LOG_STATE " Vehicle armed\n");
+                        printf(LOG_STATE " Replay started: samples=%zu rate=10Hz\n",
+                                resample.count);
+                        state = CONTROL_REPLAY_TRAJECTORY;
+                    } else {
+                        fprintf(stderr, LOG_ERROR " Vehicle arm rejected: result=%u\n",
+                                ack->result);
                         state = CONTROL_ERROR;
-                        break;
-                    }
-
-                    // check if it is from px4
-                    if (!(sender.sin_addr.s_addr == px4_address.sin_addr.s_addr
-                                && sender.sin_port == px4_address.sin_port)) {
-                        continue;
-                    }
-
-                    /* parse until find COMMAND_ACK */
-                    for (ssize_t i = 0; i < received; i++) {
-                        if (!mavlink_parser_consume(&parser, buffer[i], &frame)) {
-                            continue;
-                        }
-
-                        if (frame_msgid(&frame) != 77) {
-                            continue;
-                        }
-
-                        uint8_t crc_extra;
-                        if (!mavlink_crc_extra_for(77, &crc_extra)
-                                || !mavlink_frame_crc_valid(&frame, crc_extra)) {
-                            continue;
-                        }
-
-                        MAVLinkCommandAck_t ack;
-
-                        if (!mavlink_decode_command_ack(&frame, &ack)) {
-                            continue;
-                        }
-
-                        printf(
-                            LOG_ACK " command=%u result=%u\n",
-                            ack.command,
-                            ack.result
-                        );
-
-                        // this case is when its ack for different command
-                        if (ack.command != 400) {
-                            continue;
-                        }
-
-                        if (ack.result == 0) {
-                            printf(LOG_STATE " Vehicle armed\n");
-                            // state = CONTROL_HOLD_POSITION;
-                            printf(LOG_STATE " Replay started: samples=%zu rate=10Hz\n",
-                                    resample.count);
-                            state = CONTROL_REPLAY_TRAJECTORY;
-                        } else {
-                            fprintf(stderr, LOG_ERROR " Vehicle arm rejected: result=%u\n",
-                                    ack.result);
-                            state = CONTROL_ERROR;
-                        }
                     }
                 }
 
@@ -794,68 +703,20 @@ int main(int argc, char **argv) {
             }
 
             case CONTROL_WAIT_LAND_ACK: {
-                while (socket_ready && state == CONTROL_WAIT_LAND_ACK) {
-                    struct sockaddr_in sender = {0};
-                    socklen_t sender_length = sizeof(sender);
+                if (received_messages.command_ack_received
+                        && received_messages.command_ack.command == 21) {
+                    MAVLinkCommandAck_t *ack = &received_messages.command_ack;
 
-                    ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
-                            (struct sockaddr *)&sender, &sender_length);
-
-                    if (received < 0) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                            break;
-                        }
-
-                        perror(LOG_ERROR " Failed to receive UDP datagram");
+                    if (ack->result == 0) {
+                        printf(LOG_STATE " Land command accepted\n");
+                        printf(LOG_STATE " Waiting for automatic disarm\n");
+                        disarm_wait_start_ms = monotonic_time_ms();
+                        state = CONTROL_WAIT_DISARMED;
+                    } else {
+                        fprintf(stderr,
+                                LOG_ERROR " Land command rejected: result=%u\n",
+                                ack->result);
                         state = CONTROL_ERROR;
-                        break;
-                    }
-
-                    if (!(sender.sin_addr.s_addr == px4_address.sin_addr.s_addr
-                                && sender.sin_port == px4_address.sin_port)) {
-                        continue;
-                    }
-
-                    for (ssize_t i = 0; i < received; i++) {
-                        if (!mavlink_parser_consume(&parser, buffer[i], &frame)) {
-                            continue;
-                        }
-
-                        if (frame_msgid(&frame) != 77) {
-                            continue;
-                        }
-
-                        uint8_t crc_extra;
-                        if (!mavlink_crc_extra_for(77, &crc_extra)
-                                || !mavlink_frame_crc_valid(&frame, crc_extra)) {
-                            continue;
-                        }
-
-                        MAVLinkCommandAck_t ack;
-                        if (!mavlink_decode_command_ack(&frame, &ack)) {
-                            continue;
-                        }
-
-                        printf(LOG_ACK " command=%u result=%u\n",
-                                ack.command, ack.result);
-
-                        if (ack.command != 21) {
-                            continue;
-                        }
-
-                        if (ack.result == 0) {
-                            printf(LOG_STATE " Land command accepted\n");
-                            printf(LOG_STATE " Waiting for automatic disarm\n");
-                            disarm_wait_start_ms = monotonic_time_ms();
-                            state = CONTROL_WAIT_DISARMED;
-                        } else {
-                            fprintf(stderr,
-                                    LOG_ERROR " Land command rejected: result=%u\n",
-                                    ack.result);
-                            state = CONTROL_ERROR;
-                        }
-
-                        break;
                     }
                 }
 
@@ -901,55 +762,12 @@ int main(int argc, char **argv) {
             }
 
             case CONTROL_WAIT_DISARMED: {
-                while (socket_ready && state == CONTROL_WAIT_DISARMED) {
-                    struct sockaddr_in sender = {0};
-                    socklen_t sender_length = sizeof(sender);
+                const uint8_t armed_flag = UINT8_C(0x80);
 
-                    ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
-                            (struct sockaddr *)&sender, &sender_length);
-
-                    if (received < 0) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                            break;
-                        }
-
-                        perror(LOG_ERROR " Failed to receive UDP datagram");
-                        state = CONTROL_ERROR;
-                        break;
-                    }
-
-                    if (!(sender.sin_addr.s_addr == px4_address.sin_addr.s_addr
-                                && sender.sin_port == px4_address.sin_port)) {
-                        continue;
-                    }
-
-                    for (ssize_t i = 0; i < received; i++) {
-                        if (!mavlink_parser_consume(&parser, buffer[i], &frame)) {
-                            continue;
-                        }
-
-                        if (frame_msgid(&frame) != 0) {
-                            continue;
-                        }
-
-                        uint8_t crc_extra;
-                        if (!mavlink_crc_extra_for(0, &crc_extra)
-                                || !mavlink_frame_crc_valid(&frame, crc_extra)) {
-                            continue;
-                        }
-
-                        MAVLinkHeartbeat_t heartbeat;
-                        if (!mavlink_decode_heartbeat(&frame, &heartbeat)) {
-                            continue;
-                        }
-
-                        const uint8_t armed_flag = UINT8_C(0x80);
-                        if ((heartbeat.base_mode & armed_flag) == 0) {
-                            printf(LOG_STATE " Vehicle disarmed\n");
-                            state = CONTROL_COMPLETE;
-                            break;
-                        }
-                    }
+                if (received_messages.heartbeat_received
+                        && (received_messages.heartbeat.base_mode & armed_flag) == 0) {
+                    printf(LOG_STATE " Vehicle disarmed\n");
+                    state = CONTROL_COMPLETE;
                 }
 
                 if (state == CONTROL_WAIT_DISARMED
@@ -1026,31 +844,3 @@ static bool send_position_setpoint(
 
     return (sent == (ssize_t)command.length);
 }
-
-static bool drain_udp_datagrams(int fd) {
-    uint8_t discard_buffer[2048];
-
-    while (true) {
-        ssize_t received = recvfrom(
-            fd, discard_buffer, sizeof(discard_buffer), MSG_DONTWAIT,
-            NULL, NULL
-        );
-
-        if (received >= 0) {
-            continue;
-        }
-
-        if (errno == EINTR) {
-            continue;
-        }
-
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return true;
-        }
-
-        perror(LOG_ERROR " Failed to receive UDP datagram");
-        return false;
-    }
-}
-
-

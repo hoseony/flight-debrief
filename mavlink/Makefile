@@ -31,7 +31,10 @@ REPLAY_SOURCES := \
 	src/replay/replay.c
 
 CONTROL_SOURCES := src/control/main.c \
-				   src/control/mavlink_encoder.c
+				   src/control/control_replay.c \
+				   src/control/mavlink_encoder.c \
+				   src/control/px4_commands.c \
+				   src/control/px4_messages.c
 
 COMMON_OBJECTS := $(COMMON_SOURCES:%.c=$(BUILD_DIR)/%.o)
 RECORDER_OBJECTS := $(RECORDER_SOURCES:%.c=$(BUILD_DIR)/%.o)

@@ -10,6 +10,8 @@
 typedef struct {
     bool heartbeat_received;
     MAVLinkHeartbeat_t heartbeat;
+    bool local_position_received;
+    MAVLinkLocalPositionNed_t local_position;
     bool command_ack_received;
     MAVLinkCommandAck_t command_ack;
 } PX4ReceivedMessages_t;

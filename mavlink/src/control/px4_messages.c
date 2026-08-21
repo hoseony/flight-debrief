@@ -49,8 +49,9 @@ bool receive_px4_messages(
                 continue;
             }
 
+            // here is where all the decoding is happening
             uint32_t message_id = frame_msgid(&frame);
-            if (message_id != 0 && message_id != 77) {
+            if (message_id != 0 && message_id != 32 && message_id != 77) {
                 continue;
             }
 
@@ -66,6 +67,17 @@ bool receive_px4_messages(
                 if (mavlink_decode_heartbeat(&frame, &heartbeat)) {
                     received_messages->heartbeat = heartbeat;
                     received_messages->heartbeat_received = true;
+                }
+
+                continue;
+            }
+
+            if (message_id == 32) {
+                MAVLinkLocalPositionNed_t local_position;
+
+                if (mavlink_decode_localPositionNed(&frame, &local_position)) {
+                    received_messages->local_position = local_position;
+                    received_messages->local_position_received = true;
                 }
 
                 continue;

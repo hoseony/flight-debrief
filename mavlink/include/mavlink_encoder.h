@@ -40,4 +40,12 @@ bool mavlink_encode_arm(
     uint8_t target_component
 );
 
+bool mavlink_encode_land(
+        MAVLinkEncodedFrame_t *output,
+        uint8_t source_system,
+        uint8_t source_component,
+        uint8_t target_system,
+        uint8_t target_component
+);
+
 #endif

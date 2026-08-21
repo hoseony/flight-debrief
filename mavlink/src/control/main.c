@@ -71,9 +71,13 @@ typedef enum {
     CONTROL_WAIT_ARM_ACK,
     CONTROL_HOLD_POSITION,
     CONTROL_REPLAY_TRAJECTORY,
-    CONTROL_LAND,
+    CONTROL_COMMAND_LAND,
+    CONTROL_WAIT_LAND_ACK,
+    CONTROL_WAIT_DISARMED,
+    CONTROL_COMPLETE,
     CONTROL_ERROR
 } ControlState_t;
+
 
 /* ---------- main function ---------- */
 int main(int argc, char **argv) {
@@ -176,10 +180,14 @@ int main(int argc, char **argv) {
     /* command retry */
     const uint64_t command_retry_interval_ms = 500;
     const size_t command_max_attempts = 5;
+    const uint64_t disarm_wait_timeout_ms = 30000;
     uint64_t offboard_last_send_ms = 0;
     uint64_t arm_last_send_ms = 0;
+    uint64_t land_last_send_ms = 0;
+    uint64_t disarm_wait_start_ms = 0;
     size_t offboard_attempts = 0;
     size_t arm_attempts = 0;
+    size_t land_attempts = 0;
 
 
     /* command last pos */
@@ -195,7 +203,7 @@ int main(int argc, char **argv) {
 
 
     /* ---------- MAIN LOOP ---------- */
-    while (state != CONTROL_ERROR) {
+    while (state != CONTROL_ERROR && state != CONTROL_COMPLETE) {
         uint64_t now_ms = monotonic_time_ms();
         int timeout_ms = -1;
 
@@ -258,8 +266,12 @@ int main(int argc, char **argv) {
 
         // for the states that actually uses incoming packets,
         // that is those that are waiting the signals from the drone
-        if (socket_ready 
-                && (state != CONTROL_WAIT_HEARTBEAT) && (state != CONTROL_WAIT_OFFBOARD_ACK) && (state != CONTROL_WAIT_ARM_ACK)) {
+        if (socket_ready
+                && (state != CONTROL_WAIT_HEARTBEAT)
+                && (state != CONTROL_WAIT_OFFBOARD_ACK)
+                && (state != CONTROL_WAIT_ARM_ACK)
+                && (state != CONTROL_WAIT_LAND_ACK)
+                && (state != CONTROL_WAIT_DISARMED)) {
             // drain the udp
             if (!drain_udp_datagrams(fd)) {
                 state = CONTROL_ERROR;
@@ -670,7 +682,7 @@ int main(int argc, char **argv) {
 
                     if (count > 0 && input[0] == 'l') {
                         printf("[INPUT] Landing requested\n");
-                        state = CONTROL_LAND;
+                        state = CONTROL_COMMAND_LAND;
                         break;
                     }
                 }
@@ -750,10 +762,209 @@ int main(int argc, char **argv) {
                 break;
             }
 
-            case CONTROL_LAND: {
+            case CONTROL_COMMAND_LAND: {
+                MAVLinkEncodedFrame_t land_command;
+
+                if (!mavlink_encode_land(&land_command,
+                            source_system, source_component,
+                            target_system, target_component)) {
+                    fprintf(stderr, LOG_ERROR " Failed to encode Land command\n");
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                ssize_t sent = sendto(fd, land_command.bytes,
+                        land_command.length, 0,
+                        (const struct sockaddr *)&px4_address,
+                        px4_address_length);
+
+                if (sent != (ssize_t)land_command.length) {
+                    perror(LOG_ERROR " Failed to send Land command");
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                land_attempts = 1;
+                land_last_send_ms = monotonic_time_ms();
+                printf(LOG_STATE " Landing requested: attempt=1/%zu\n",
+                        command_max_attempts);
+                printf(LOG_STATE " Waiting for Land acknowledgement\n");
+                state = CONTROL_WAIT_LAND_ACK;
                 break;
             }
 
+            case CONTROL_WAIT_LAND_ACK: {
+                while (socket_ready && state == CONTROL_WAIT_LAND_ACK) {
+                    struct sockaddr_in sender = {0};
+                    socklen_t sender_length = sizeof(sender);
+
+                    ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
+                            (struct sockaddr *)&sender, &sender_length);
+
+                    if (received < 0) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            break;
+                        }
+
+                        perror(LOG_ERROR " Failed to receive UDP datagram");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    if (!(sender.sin_addr.s_addr == px4_address.sin_addr.s_addr
+                                && sender.sin_port == px4_address.sin_port)) {
+                        continue;
+                    }
+
+                    for (ssize_t i = 0; i < received; i++) {
+                        if (!mavlink_parser_consume(&parser, buffer[i], &frame)) {
+                            continue;
+                        }
+
+                        if (frame_msgid(&frame) != 77) {
+                            continue;
+                        }
+
+                        uint8_t crc_extra;
+                        if (!mavlink_crc_extra_for(77, &crc_extra)
+                                || !mavlink_frame_crc_valid(&frame, crc_extra)) {
+                            continue;
+                        }
+
+                        MAVLinkCommandAck_t ack;
+                        if (!mavlink_decode_command_ack(&frame, &ack)) {
+                            continue;
+                        }
+
+                        printf(LOG_ACK " command=%u result=%u\n",
+                                ack.command, ack.result);
+
+                        if (ack.command != 21) {
+                            continue;
+                        }
+
+                        if (ack.result == 0) {
+                            printf(LOG_STATE " Land command accepted\n");
+                            printf(LOG_STATE " Waiting for automatic disarm\n");
+                            disarm_wait_start_ms = monotonic_time_ms();
+                            state = CONTROL_WAIT_DISARMED;
+                        } else {
+                            fprintf(stderr,
+                                    LOG_ERROR " Land command rejected: result=%u\n",
+                                    ack.result);
+                            state = CONTROL_ERROR;
+                        }
+
+                        break;
+                    }
+                }
+
+                if (state == CONTROL_WAIT_LAND_ACK
+                        && monotonic_time_ms() - land_last_send_ms
+                            >= command_retry_interval_ms) {
+                    if (land_attempts >= command_max_attempts) {
+                        fprintf(stderr,
+                                LOG_ERROR " Land acknowledgement timed out: attempts=%zu\n",
+                                land_attempts);
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    MAVLinkEncodedFrame_t land_command;
+                    if (!mavlink_encode_land(&land_command,
+                                source_system, source_component,
+                                target_system, target_component)) {
+                        fprintf(stderr,
+                                LOG_ERROR " Failed to encode Land command retry\n");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    ssize_t sent = sendto(fd, land_command.bytes,
+                            land_command.length, 0,
+                            (const struct sockaddr *)&px4_address,
+                            px4_address_length);
+
+                    if (sent != (ssize_t)land_command.length) {
+                        perror(LOG_ERROR " Failed to resend Land command");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    land_attempts++;
+                    land_last_send_ms = monotonic_time_ms();
+                    printf(LOG_STATE " Landing requested: attempt=%zu/%zu\n",
+                            land_attempts, command_max_attempts);
+                }
+
+                break;
+            }
+
+            case CONTROL_WAIT_DISARMED: {
+                while (socket_ready && state == CONTROL_WAIT_DISARMED) {
+                    struct sockaddr_in sender = {0};
+                    socklen_t sender_length = sizeof(sender);
+
+                    ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
+                            (struct sockaddr *)&sender, &sender_length);
+
+                    if (received < 0) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            break;
+                        }
+
+                        perror(LOG_ERROR " Failed to receive UDP datagram");
+                        state = CONTROL_ERROR;
+                        break;
+                    }
+
+                    if (!(sender.sin_addr.s_addr == px4_address.sin_addr.s_addr
+                                && sender.sin_port == px4_address.sin_port)) {
+                        continue;
+                    }
+
+                    for (ssize_t i = 0; i < received; i++) {
+                        if (!mavlink_parser_consume(&parser, buffer[i], &frame)) {
+                            continue;
+                        }
+
+                        if (frame_msgid(&frame) != 0) {
+                            continue;
+                        }
+
+                        uint8_t crc_extra;
+                        if (!mavlink_crc_extra_for(0, &crc_extra)
+                                || !mavlink_frame_crc_valid(&frame, crc_extra)) {
+                            continue;
+                        }
+
+                        MAVLinkHeartbeat_t heartbeat;
+                        if (!mavlink_decode_heartbeat(&frame, &heartbeat)) {
+                            continue;
+                        }
+
+                        const uint8_t armed_flag = UINT8_C(0x80);
+                        if ((heartbeat.base_mode & armed_flag) == 0) {
+                            printf(LOG_STATE " Vehicle disarmed\n");
+                            state = CONTROL_COMPLETE;
+                            break;
+                        }
+                    }
+                }
+
+                if (state == CONTROL_WAIT_DISARMED
+                        && monotonic_time_ms() - disarm_wait_start_ms
+                            >= disarm_wait_timeout_ms) {
+                    fprintf(stderr,
+                            LOG_ERROR " Automatic disarm timed out after %llums\n",
+                            (unsigned long long)disarm_wait_timeout_ms);
+                    state = CONTROL_ERROR;
+                }
+
+                break;
+            }
+
+            case CONTROL_COMPLETE:
             case CONTROL_ERROR:
                 break;
         }
@@ -772,7 +983,15 @@ int main(int argc, char **argv) {
     replay_trajectory_free(&trajectory);
     replay_trajectory_free(&resample);
 
-    return 0;
+    if (close(fd) < 0) {
+        perror(LOG_ERROR " Failed to close UDP socket");
+    }
+
+    if (fclose(file) == EOF) {
+        perror(LOG_ERROR " Failed to close telemetry log");
+    }
+
+    return (state == CONTROL_COMPLETE) ? 0 : 1;
 }
 
 
@@ -833,3 +1052,5 @@ static bool drain_udp_datagrams(int fd) {
         return false;
     }
 }
+
+

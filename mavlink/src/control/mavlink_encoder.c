@@ -96,3 +96,25 @@ bool mavlink_encode_arm(MAVLinkEncodedFrame_t *output, uint8_t source_system, ui
 
     return output->length > 0;
 }
+
+bool mavlink_encode_land(MAVLinkEncodedFrame_t *output, uint8_t source_system, uint8_t source_component, uint8_t target_system, uint8_t target_component) {
+    if (output == NULL) {
+        return false;
+    }
+
+    output->length = 0;
+
+    mavlink_message_t message = {0};
+
+    mavlink_msg_command_long_pack(
+        source_system, source_component,
+        &message,
+        target_system, target_component,
+        MAV_CMD_NAV_LAND,
+        0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+    );
+
+    output->length = mavlink_msg_to_send_buffer(output->bytes, &message);
+
+    return output->length > 0;
+}

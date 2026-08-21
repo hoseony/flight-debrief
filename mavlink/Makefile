@@ -32,6 +32,7 @@ REPLAY_SOURCES := \
 
 CONTROL_SOURCES := src/control/main.c \
 				   src/control/control_replay.c \
+				   src/control/control_transport.c \
 				   src/control/mavlink_encoder.c \
 				   src/control/px4_commands.c \
 				   src/control/px4_messages.c
@@ -67,6 +68,7 @@ $(REPLAY_TARGET): $(COMMON_OBJECTS) $(REPLAY_OBJECTS)
 
 $(CONTROL_TARGET): $(COMMON_OBJECTS) \
 	$(BUILD_DIR)/src/replay/replay.o \
+	$(BUILD_DIR)/src/recorder/serial_port.o \
 	$(BUILD_DIR)/src/recorder/udp_port.o \
 	$(CONTROL_OBJECTS)
 	$(CC) $^ -o $@

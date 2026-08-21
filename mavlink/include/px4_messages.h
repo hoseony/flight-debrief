@@ -1,9 +1,9 @@
 #ifndef PX4_MESSAGES_H
 #define PX4_MESSAGES_H
 
-#include <arpa/inet.h>
 #include <stdbool.h>
 
+#include "control_transport.h"
 #include "mavlink_parser.h"
 #include "mavlink_types.h"
 
@@ -17,8 +17,7 @@ typedef struct {
 } PX4ReceivedMessages_t;
 
 bool receive_px4_messages(
-    int fd,
-    const struct sockaddr_in *px4_address,
+    ControlTransport_t *transport,
     MAVLinkParser_t *parser,
     PX4ReceivedMessages_t *received_messages
 );

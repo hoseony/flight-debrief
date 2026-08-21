@@ -8,8 +8,8 @@
  * 2. open udp socket 
  * 3. start the event loop
  *  - poll() waits until 
- *      a. udp packet arrives 
- *         -> wake, receive datagrams 
+ *      a. transport data arrives
+ *         -> wake, receive available bytes
  *         -> parse Heartbeat or command_ack
  *         -> change the control state if necessary
  *      b. next 10hz deadline arrives
@@ -26,20 +26,18 @@
  */
 
 /* ---------- #include / #define ---------- */
-#include <arpa/inet.h>
 #include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 #include <poll.h>
 
 #include "../../include/mavlink_decode.h"
 #include "../../include/mavlink_parser.h"
-#include "../../include/udp_port.h"
+#include "../../include/control_transport.h"
 #include "../../include/mavlink_encoder.h"
 #include "../../include/replay.h"
 #include "../../include/px4_messages.h"
@@ -78,29 +76,39 @@ typedef enum {
 
 /* ---------- main function ---------- */
 int main(int argc, char **argv) {
-    // this part is basically integration of replay to the state machine that is in this file 
-    // The code is indeed getting messy, but for now, bare with me...
 
-    if (argc < 2 || argc > 3
-            || (argc == 3 && strcmp(argv[2], "--diff") != 0)) {
-        fprintf(stderr, "Usage: %s <telemetry.tlog> [--diff]\n", argv[0]);
+    bool serial_mode = argc >= 2 && strcmp(argv[1], "serial") == 0;
+    bool valid_arguments = serial_mode
+        ? (argc == 4 || (argc == 5 && strcmp(argv[4], "--diff") == 0))
+        : (argc == 2 || (argc == 3 && strcmp(argv[2], "--diff") == 0));
+
+    if (!valid_arguments) {
+        fprintf(stderr,
+                "Usage: %s <telemetry.tlog> [--diff]\n"
+                "       %s serial <device> <telemetry.tlog> [--diff]\n",
+                argv[0], argv[0]);
         return 1;
     }
 
-    bool tracking_diff_enabled = argc == 3;
+    const char *serial_device = serial_mode ? argv[2] : NULL;
+    const char *trajectory_path = serial_mode ? argv[3] : argv[1];
+    bool tracking_diff_enabled = serial_mode ? argc == 5 : argc == 3;
 
     ReplayTrajectory_t resample = {0};
-    if (!prepare_replay_trajectory(argv[1], &resample)) {
+    if (!prepare_replay_trajectory(trajectory_path, &resample)) {
         return 1;
     }
 
     const ReplayPosition_t *initial_position = &resample.positions[0];
 
-    /* ---------- open port ---------- */
-    int fd = udp_port_open(14550);
+    /* ---------- open transport ---------- */
+    ControlTransport_t transport;
+    bool transport_opened = serial_mode
+        ? control_transport_open_serial(&transport, serial_device)
+        : control_transport_open_udp(&transport, 14550);
 
-    if (fd < 0) {
-        perror(LOG_ERROR " Failed to open UDP port");
+    if (!transport_opened) {
+        perror(LOG_ERROR " Failed to open control transport");
         replay_trajectory_free(&resample);
         return 1;
     }
@@ -114,8 +122,6 @@ int main(int argc, char **argv) {
     MAVLinkFrame_t frame;
     mavlink_parser_init(&parser);
 
-    struct sockaddr_in px4_address = {0};
-    socklen_t px4_address_length = sizeof(px4_address);
     uint8_t target_system = 0;
     uint8_t target_component = 0;
     bool px4_found = false;
@@ -173,8 +179,8 @@ int main(int argc, char **argv) {
 
         struct pollfd events[2]= {
             {
-                .fd = fd,
-                .events = POLLIN  // at least one udp datagram wiating
+                .fd = control_transport_fd(&transport),
+                .events = POLLIN
             },
             {
                 .fd = STDIN_FILENO, // macro for stdin fd
@@ -197,9 +203,9 @@ int main(int argc, char **argv) {
             break;
         }
 
-        // catch socket event error
-        if (events[0].revents & (POLLERR | POLLNVAL)) {
-            fprintf(stderr, LOG_ERROR " UDP socket event failure: revents=0x%x\n",
+        // catch transport event error
+        if (events[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            fprintf(stderr, LOG_ERROR " Control transport event failure: revents=0x%x\n",
                     events[0].revents);
             state = CONTROL_ERROR;
             break;
@@ -211,9 +217,9 @@ int main(int argc, char **argv) {
             break;
         }
 
-        // This is when you can read the socket. 
+        // This is when you can read the transport.
         // It ensures there exists some data
-        bool socket_ready = (poll_result > 0) && (events[0].revents & POLLIN);
+        bool transport_ready = (poll_result > 0) && (events[0].revents & POLLIN);
         bool input_ready = (poll_result > 0) && (events[1].revents & POLLIN);
         // update now
         now_ms = monotonic_time_ms();
@@ -224,9 +230,9 @@ int main(int argc, char **argv) {
         // This is where all the necessary messages are being captured
         PX4ReceivedMessages_t received_messages = {0};
 
-        if (socket_ready && state != CONTROL_WAIT_HEARTBEAT) {
+        if (transport_ready && state != CONTROL_WAIT_HEARTBEAT) {
             if (!receive_px4_messages(
-                        fd, &px4_address, &parser, &received_messages)) {
+                        &transport, &parser, &received_messages)) {
                 state = CONTROL_ERROR;
                 break;
             }
@@ -280,24 +286,25 @@ int main(int argc, char **argv) {
             // to check the address it is coming from
             // once it finds the drone, it proceeds to next state
             case CONTROL_WAIT_HEARTBEAT: {
-                if (!socket_ready) {
+                if (!transport_ready) {
                     break;
                 }
 
-                struct sockaddr_in sender = {0};
-                socklen_t sender_length = sizeof(sender);
-
-                ssize_t received = recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
-                        (struct sockaddr *)(&sender), &sender_length);
+                ssize_t received = control_transport_receive(
+                        &transport, buffer, sizeof(buffer));
 
                 if (received < 0) {
                     if (errno == EAGAIN || errno == EWOULDBLOCK) {
                         break;
                     }
                     
-                    perror(LOG_ERROR " Failed to receive UDP datagram");
-                    close(fd);
-                    return 1;
+                    perror(LOG_ERROR " Failed to receive control data");
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                if (received == 0) {
+                    break;
                 }
 
                 /* parse until find px4 */
@@ -315,21 +322,19 @@ int main(int argc, char **argv) {
                         continue;
                     }
 
-                    px4_address = sender;
-                    px4_address_length = sender_length;
+                    control_transport_accept_peer(&transport);
                     target_system = frame.bytes[5];
                     target_component = frame.bytes[6];
                     px4_found = true;
                     last_heartbeat_ms = monotonic_time_ms();
 
-                    char address[INET_ADDRSTRLEN];
-
-                    inet_ntop(AF_INET, &sender.sin_addr, address, sizeof(address));
+                    char connection[160];
+                    control_transport_describe_peer(
+                            &transport, connection, sizeof(connection));
 
                     printf(
-                        "[INFO] PX4 discovered: address=%s:%u system=%u component=%u\n",
-                        address,
-                        ntohs(sender.sin_port),
+                        "[INFO] PX4 discovered: connection=%s system=%u component=%u\n",
+                        connection,
                         frame.bytes[5],
                         frame.bytes[6]
                     );
@@ -353,7 +358,7 @@ int main(int argc, char **argv) {
                 }
 
                 if (!send_position_setpoint(
-                            fd, &px4_address, px4_address_length,
+                            &transport,
                             source_system, source_component,
                             target_system, target_component,
                             initial_position->x,
@@ -370,7 +375,7 @@ int main(int argc, char **argv) {
                     printf("[INFO] Prestream complete: sent=%zu\n", setpoint_count);
 
                     if (!encode_and_send_command(
-                                fd, &px4_address, px4_address_length,
+                                &transport,
                                 source_system, source_component,
                                 target_system, target_component,
                                 mavlink_encode_set_offboard_mode)) {
@@ -397,7 +402,7 @@ int main(int argc, char **argv) {
             // which, in this case COMMAND_ACK
             case CONTROL_WAIT_OFFBOARD_ACK: {
                 if (setpoint_due && !send_position_setpoint(
-                            fd, &px4_address, px4_address_length,
+                            &transport,
                             source_system, source_component,
                             target_system, target_component,
                             initial_position->x,
@@ -415,7 +420,7 @@ int main(int argc, char **argv) {
                         printf(LOG_STATE " Offboard mode accepted\n");
 
                         if (!encode_and_send_command(
-                                    fd, &px4_address, px4_address_length,
+                                    &transport,
                                     source_system, source_component,
                                     target_system, target_component,
                                     mavlink_encode_arm)) {
@@ -449,7 +454,7 @@ int main(int argc, char **argv) {
                     }
 
                     if (!encode_and_send_command(
-                                fd, &px4_address, px4_address_length,
+                                &transport,
                                 source_system, source_component,
                                 target_system, target_component,
                                 mavlink_encode_set_offboard_mode)) {
@@ -470,7 +475,7 @@ int main(int argc, char **argv) {
 
             case CONTROL_WAIT_ARM_ACK: {
                 if (setpoint_due && !send_position_setpoint(
-                            fd, &px4_address, px4_address_length,
+                            &transport,
                             source_system, source_component,
                             target_system, target_component,
                             initial_position->x,
@@ -507,7 +512,7 @@ int main(int argc, char **argv) {
                     }
 
                     if (!encode_and_send_command(
-                                fd, &px4_address, px4_address_length,
+                                &transport,
                                 source_system, source_component,
                                 target_system, target_component,
                                 mavlink_encode_arm)) {
@@ -548,7 +553,7 @@ int main(int argc, char **argv) {
                 }
 
                 if (!send_position_setpoint(
-                            fd, &px4_address, px4_address_length,
+                            &transport,
                             source_system, source_component,
                             target_system, target_component,
                             last_commanded_position.x,
@@ -576,7 +581,7 @@ int main(int argc, char **argv) {
                 ReplayPosition_t *position = &resample.positions[replay_index];
 
                 if (!send_position_setpoint(
-                            fd, &px4_address, px4_address_length,
+                            &transport,
                             source_system, source_component,
                             target_system, target_component,
                             position->x, position->y, position->z)) {
@@ -607,7 +612,7 @@ int main(int argc, char **argv) {
 
             case CONTROL_COMMAND_LAND: {
                 if (!encode_and_send_command(
-                            fd, &px4_address, px4_address_length,
+                            &transport,
                             source_system, source_component,
                             target_system, target_component,
                             mavlink_encode_land)) {
@@ -656,7 +661,7 @@ int main(int argc, char **argv) {
                     }
 
                     if (!encode_and_send_command(
-                                fd, &px4_address, px4_address_length,
+                                &transport,
                                 source_system, source_component,
                                 target_system, target_component,
                                 mavlink_encode_land)) {
@@ -713,8 +718,8 @@ int main(int argc, char **argv) {
 
     replay_trajectory_free(&resample);
 
-    if (close(fd) < 0) {
-        perror(LOG_ERROR " Failed to close UDP socket");
+    if (!control_transport_close(&transport)) {
+        perror(LOG_ERROR " Failed to close control transport");
     }
 
     return (state == CONTROL_COMPLETE) ? 0 : 1;

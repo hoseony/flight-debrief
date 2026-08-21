@@ -1,10 +1,10 @@
 #ifndef PX4_COMMANDS_H
 #define PX4_COMMANDS_H
 
-#include <arpa/inet.h>
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "control_transport.h"
 #include "mavlink_encoder.h"
 
 typedef bool (*CommandEncoderFn)(
@@ -16,9 +16,7 @@ typedef bool (*CommandEncoderFn)(
 );
 
 bool send_position_setpoint(
-    int fd,
-    const struct sockaddr_in *px4_address,
-    socklen_t px4_address_length,
+    ControlTransport_t *transport,
     uint8_t source_system,
     uint8_t source_component,
     uint8_t target_system,
@@ -29,9 +27,7 @@ bool send_position_setpoint(
 );
 
 bool encode_and_send_command(
-    int fd,
-    const struct sockaddr_in *px4_address,
-    socklen_t px4_address_length,
+    ControlTransport_t *transport,
     uint8_t source_system,
     uint8_t source_component,
     uint8_t target_system,

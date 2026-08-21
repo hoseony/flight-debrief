@@ -1,28 +1,21 @@
 #include <errno.h>
 #include <stdio.h>
-#include <sys/socket.h>
-
 #include "../../include/mavlink_decode.h"
 #include "../../include/px4_messages.h"
 
 bool receive_px4_messages(
-        int fd,
-        const struct sockaddr_in *px4_address,
+        ControlTransport_t *transport,
         MAVLinkParser_t *parser,
         PX4ReceivedMessages_t *received_messages) {
-    if (px4_address == NULL || parser == NULL || received_messages == NULL) {
+    if (transport == NULL || parser == NULL || received_messages == NULL) {
         return false;
     }
 
     uint8_t receive_buffer[2048];
 
     while (true) {
-        struct sockaddr_in sender = {0};
-        socklen_t sender_length = sizeof(sender);
-
-        ssize_t received = recvfrom(fd,
-                receive_buffer, sizeof(receive_buffer), MSG_DONTWAIT,
-                (struct sockaddr *)&sender, &sender_length);
+        ssize_t received = control_transport_receive(
+                transport, receive_buffer, sizeof(receive_buffer));
 
         if (received < 0) {
             if (errno == EINTR) {
@@ -33,13 +26,12 @@ bool receive_px4_messages(
                 return true;
             }
 
-            perror("receive_px4_messages: recvfrom");
+            perror("receive_px4_messages");
             return false;
         }
 
-        if (!(sender.sin_addr.s_addr == px4_address->sin_addr.s_addr
-                    && sender.sin_port == px4_address->sin_port)) {
-            continue;
+        if (received == 0) {
+            return true;
         }
 
         MAVLinkFrame_t frame;

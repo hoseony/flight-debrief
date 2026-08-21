@@ -1,26 +1,17 @@
-#include <sys/socket.h>
-
 #include "../../include/px4_commands.h"
 
 static bool send_encoded_frame(
-        int fd,
-        const struct sockaddr_in *px4_address,
-        socklen_t px4_address_length,
+        ControlTransport_t *transport,
         const MAVLinkEncodedFrame_t *frame) {
-    if (px4_address == NULL || frame == NULL || frame->length == 0) {
+    if (transport == NULL || frame == NULL || frame->length == 0) {
         return false;
     }
 
-    ssize_t sent = sendto(fd, frame->bytes, frame->length, 0,
-            (const struct sockaddr *)px4_address, px4_address_length);
-
-    return sent == (ssize_t)frame->length;
+    return control_transport_send(transport, frame->bytes, frame->length);
 }
 
 bool send_position_setpoint(
-        int fd,
-        const struct sockaddr_in *px4_address,
-        socklen_t px4_address_length,
+        ControlTransport_t *transport,
         uint8_t source_system,
         uint8_t source_component,
         uint8_t target_system,
@@ -38,13 +29,11 @@ bool send_position_setpoint(
         return false;
     }
 
-    return send_encoded_frame(fd, px4_address, px4_address_length, &command);
+    return send_encoded_frame(transport, &command);
 }
 
 bool encode_and_send_command(
-        int fd,
-        const struct sockaddr_in *px4_address,
-        socklen_t px4_address_length,
+        ControlTransport_t *transport,
         uint8_t source_system,
         uint8_t source_component,
         uint8_t target_system,
@@ -63,5 +52,5 @@ bool encode_and_send_command(
         return false;
     }
 
-    return send_encoded_frame(fd, px4_address, px4_address_length, &frame);
+    return send_encoded_frame(transport, &frame);
 }

@@ -19,10 +19,11 @@
  *
  * Overall Flow: 
  *      Load trajectory          -> Wait for Heartbeat
- *      -> Prestream setpoints   -> Request Offboard
+ *      -> Capture local origin  -> Prestream setpoints
+ *      -> Request Offboard
  *      -> Wait for Offboard ACK -> Request Arm
  *      -> Wait for Arm ACK      -> Replay trajectory at 10 Hz
- *      -> Hold final position   -> Land
+ *      -> Hold final position   -> Land (sequence)
  */
 
 /* ---------- #include / #define ---------- */
@@ -62,6 +63,7 @@ static uint64_t monotonic_time_ms(void);
 // FSM approach makes it a bit cleaner (believe or not...)
 typedef enum {
     CONTROL_WAIT_HEARTBEAT,
+    CONTROL_WAIT_LOCAL_POSITION,
     CONTROL_PRESTREAM_SETPOINT,
     CONTROL_WAIT_OFFBOARD_ACK,
     CONTROL_WAIT_ARM_ACK,
@@ -171,9 +173,11 @@ int main(int argc, char **argv) {
         uint64_t now_ms = monotonic_time_ms();
         int timeout_ms = -1;
 
-        // for the states that are not CONTROL_WAIT_HEARTBEAT
-        // set a timeout
-        if (state != CONTROL_WAIT_HEARTBEAT) {
+        // Wake periodically while waiting for the local position. Other
+        // active states wake on the next 10 Hz setpoint deadline.
+        if (state == CONTROL_WAIT_LOCAL_POSITION) {
+            timeout_ms = 1000;
+        } else if (state != CONTROL_WAIT_HEARTBEAT) {
             timeout_ms = (next_setpoint_ms > now_ms) ? (int)(next_setpoint_ms - now_ms) : 0;
         }
 
@@ -225,7 +229,9 @@ int main(int argc, char **argv) {
         now_ms = monotonic_time_ms();
 
         // condition that checks if it needs to send setpoint signal
-        bool setpoint_due = (state != CONTROL_WAIT_HEARTBEAT) && (now_ms >= next_setpoint_ms);
+        bool setpoint_due = state != CONTROL_WAIT_HEARTBEAT
+            && state != CONTROL_WAIT_LOCAL_POSITION
+            && now_ms >= next_setpoint_ms;
 
         // This is where all the necessary messages are being captured
         PX4ReceivedMessages_t received_messages = {0};
@@ -342,11 +348,33 @@ int main(int argc, char **argv) {
 
                 // we found it!
                 if (px4_found) {
-                    printf(LOG_STATE " Prestreaming setpoints: count=20 rate=10Hz\n");
-                    next_setpoint_ms = monotonic_time_ms();
-                    state = CONTROL_PRESTREAM_SETPOINT;
+                    printf(LOG_STATE " Waiting for current local position\n");
+                    state = CONTROL_WAIT_LOCAL_POSITION;
                 }
 
+                break;
+            }
+
+            case CONTROL_WAIT_LOCAL_POSITION: {
+                if (!received_messages.local_position_received) {
+                    break;
+                }
+
+                const MAVLinkLocalPositionNed_t *origin =
+                    &received_messages.local_position;
+
+                if (!control_replay_apply_origin(
+                            &resample, origin->x, origin->y, origin->z)) {
+                    fprintf(stderr, LOG_ERROR " Invalid replay origin\n");
+                    state = CONTROL_ERROR;
+                    break;
+                }
+
+                printf("[INFO] Replay origin: ned=(%+.3f, %+.3f, %+.3f)\n",
+                        origin->x, origin->y, origin->z);
+                printf(LOG_STATE " Prestreaming setpoints: count=20 rate=10Hz\n");
+                next_setpoint_ms = monotonic_time_ms();
+                state = CONTROL_PRESTREAM_SETPOINT;
                 break;
             }
 

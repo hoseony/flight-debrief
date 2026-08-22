@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -82,4 +83,38 @@ bool prepare_replay_trajectory(
     }
 
     return success;
+}
+
+bool control_replay_apply_origin(
+        ReplayTrajectory_t *trajectory,
+        float origin_x,
+        float origin_y,
+        float origin_z) {
+    if (trajectory == NULL
+            || trajectory->positions == NULL
+            || trajectory->count == 0
+            || !isfinite(origin_x)
+            || !isfinite(origin_y)
+            || !isfinite(origin_z)) {
+        return false;
+    }
+
+    for (size_t i = 0; i < trajectory->count; i++) {
+        const ReplayPosition_t *position = &trajectory->positions[i];
+
+        if (!isfinite(position->x + origin_x)
+                || !isfinite(position->y + origin_y)
+                || !isfinite(position->z + origin_z)) {
+            return false;
+        }
+    }
+
+    for (size_t i = 0; i < trajectory->count; i++) {
+        ReplayPosition_t *position = &trajectory->positions[i];
+        position->x += origin_x;
+        position->y += origin_y;
+        position->z += origin_z;
+    }
+
+    return true;
 }

@@ -1,5 +1,7 @@
+_This dir was made to test uart on the rpi zero 2w._
+
 # Setting Up Raspberry Pi Pico Zero 2w
-rpi zero w2: OS Lite (64bit)
+rpi zero 2w: OS Lite (64bit)
 
 ## Testing UART
 _./uart_loopback_test.c_
@@ -8,7 +10,7 @@ This turned out to be a little more complicated than I expected. Unlike other ba
 
 `/dev/serial0` is a symbolic links that points to something like /dev/ttyS0. For example, you can check this on terminal:
 ```
-hyu@fd-hyu:~/repo/flight-debrief$ ls -l /dev/serial0
+> ls -l /dev/serial0
 lrwxrwxrwx 1 root root 5 Aug  4 02:40 /dev/serial0 -> ttyS0
 ```
 The name /dev/ttyS0 can be understood as:

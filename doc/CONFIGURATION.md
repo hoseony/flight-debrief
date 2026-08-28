@@ -10,8 +10,6 @@ This file records the configuration that has already worked in this project. Pla
 - Flight controller: Pixhawk 6X running PX4
 - Companion computer: Raspberry Pi Zero 2 W
 - Pi operating system: Raspberry Pi OS Lite, 64-bit
-- Pi hostname used by the log-copy script: `fd-hyu.local`
-- Previously observed Pi address: `192.168.0.79`
 
 ## Pixhawk TELEM2
 
@@ -65,7 +63,7 @@ Each stored record contains an 8-byte receive timestamp followed by one complete
 Copy Pi logs to the Mac from the repository root:
 
 ```sh
-./pull_pi_logs.sh
+./tools/pull_pi_logs.sh
 ```
 
 Default source and destination:

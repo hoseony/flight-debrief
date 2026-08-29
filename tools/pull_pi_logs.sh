@@ -3,7 +3,7 @@
 set -eu
 
 PI_HOST="${PI_HOST:-[PUT YOUR PI HOST]}"
-PI_LOG_DIR="${PI_LOG_DIR:-repo/flight-debrief/mavlink/out}"
+PI_LOG_DIR="${PI_LOG_DIR:-repo/flight-debrief/main/out}"
 
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_directory/.." && pwd)

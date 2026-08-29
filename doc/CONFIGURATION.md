@@ -38,7 +38,7 @@ The Pi opens the port as `/dev/serial0`. On the tested Pi, `/dev/serial0` points
 Start the recorder on the Pi:
 
 ```sh
-cd ~/repo/flight-debrief/mavlink
+cd ~/repo/flight-debrief/main
 ./flight-debrief serial /dev/serial0
 ```
 
@@ -49,7 +49,7 @@ The recorder waits for at least one byte, has no serial read timeout, and stops 
 The recorder creates a directory under:
 
 ```text
-mavlink/out/log_YYYYMMDD_HH_MM_SS/
+main/out/log_YYYYMMDD_HH_MM_SS/
 ```
 
 The raw MAVLink log is:
@@ -69,7 +69,7 @@ Copy Pi logs to the Mac from the repository root:
 Default source and destination:
 
 ```text
-$PI_HOST:~/repo/flight-debrief/mavlink/out/
+$PI_HOST:~/repo/flight-debrief/main/out/
 ./downloaded-logs/
 ```
 
@@ -112,7 +112,7 @@ PX4 local/source port: 18570
 recorder receive port: 14550
 ```
 
-Start the recorder from the `mavlink` directory:
+Start the recorder from the `main` directory:
 
 ```sh
 ./flight-debrief udp 14550
@@ -125,7 +125,7 @@ The recorder only receives on this connection. It does not currently send comman
 Test file:
 
 ```text
-mavlink/out/log_20260818_18_03_57/telemetry.tlog
+main/out/log_20260818_18_03_57/telemetry.tlog
 ```
 
 This log contains a takeoff and landing. The highest recorded point is approximately:

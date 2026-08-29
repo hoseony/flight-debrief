@@ -1,7 +1,11 @@
 /downloaded-logs/
-/mavlink/build/
-/mavlink/out/
-/mavlink/flight-debrief
-/mavlink/tlog-validator
-/mavlink/flight-replay
-/mavlink/src/validator/a.out
+/main/build/
+/main/out/
+/main/flight-debrief
+/main/tlog-validator
+/main/flight-replay
+/main/sitl-position-hold
+/main/compile_flags.txt
+*.tlog
+.DS_Store
+.env

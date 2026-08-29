@@ -1,4 +1,12 @@
-#include <development/mavlink.h>
+#if defined(__has_include)
+#  if __has_include(<development/mavlink.h>)
+#    include <development/mavlink.h>
+#  else
+#    include <common/mavlink.h>
+#  endif
+#else
+#  include <common/mavlink.h>
+#endif
 #include <math.h>
 #include "../../include/mavlink_encoder.h"
 

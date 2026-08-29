@@ -6,9 +6,7 @@ A system for recording MAVLink flight telemetry, extracting a trajectory, and re
 > 
 > Test all change in simulation first. Verify all the behaviors with reliable methods. Operate ONLY in a SAFE, LEGAL, and sufficiently open area. 
 >
-> The physical replay system has not yet been validated in propeller-on flight for few reasons listed above. Use this software entirely at your own risk...
-> 
-> If you found any problems, please let me know by creating issues.
+> Propeller-on replay will remain unverified for the time being. Further physical testing was paused until a stable and safe flight baseline can be established. Use this software at your own risk.
 
 ## Overview
 The project provides four small C programs:
@@ -95,12 +93,21 @@ The hardware transport uses the same controller over UART:
 > The hardware command can arm and move a real drone. DO NOT  run it with propellers installed until the complete configuration and safety behavior have been independently verified.
 > PLEASE BE SAFE!
 
-## About Replay and Safety
+## About Replay
+1. Loads local-position samples and makes the path relative to its first recorded position.
+2. Trajectory gets resampled (linear interpolation).
+3. Rejects missing, non-finite, and trajectory that violates internal safety limit (`control/control_replay` 57).
+4. Waits for the current local positions and offsets the path to that origin.
+5. Prestreams position setpoints
+6. Confirms command acknowledgements
+7. Continues sending setpoints
 
-## Verification
+The current internal limits are 3 m altitude, 0.5 m horizontal distance, 1 m/s speed, and les than 30 sec duration. These limits are development safeguards, not a guarantee that a trajectory is safe.
+
+The controller also monitors PX4 heartbeats, holds the last commanded position after replay, accepts a landing request, and waits for automatic disarm. If the controller exits or its connection is lost, setpoint transmission stops and PX4's configured Offboard-loss failsafe is expected to take control.
 
 ## Reporting Issues
-If you find a problem, please, report it by opening a GitHub issue including the relevant platform, PX4 version, connection type (UDP or serial), and log output.
+If you find a problem, please, report it by opening a GitHub issue including the relevant platform, PX4 version, connection type (UDP or serial), log output, and etc.
 
 ## License
 This project is available under the [MIT License](LICENSE.md).

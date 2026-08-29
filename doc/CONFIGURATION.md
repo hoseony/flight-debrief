@@ -69,7 +69,7 @@ Copy Pi logs to the Mac from the repository root:
 Default source and destination:
 
 ```text
-hyu@fd-hyu.local:~/repo/flight-debrief/mavlink/out/
+$PI_HOST:~/repo/flight-debrief/mavlink/out/
 ./downloaded-logs/
 ```
 

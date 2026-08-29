@@ -8,11 +8,6 @@
 #include "../../include/tlog.h"
 #include "../../include/replay.h"
 
-/*
- * make -C ../../ && ../../flight-replay ../../out/log_20260817_15_06_49/telemetry.tlog
- */
-
-
 int main(int argc, char* argv[]) {
     int exit_status = 0;
 

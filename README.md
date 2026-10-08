@@ -27,7 +27,7 @@ Recordings use a project-specific `.tlog` format. Each record contains an 8-byte
 - Pixhawk 6X with PX4
 - Raspberry Pi Zero 2W
 
-See [Known Working Configuration][doc/CONFIGURATION.md] for the verified PX4, UART, UDP, and macOS SITL settings.
+See [Known Working Configuration](doc/CONFIGURATION.md) for the verified PX4, UART, UDP, and macOS SITL settings.
 
 ## Repository Layout
 
